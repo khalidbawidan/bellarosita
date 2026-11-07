@@ -5,7 +5,7 @@
    ===================================================================== */
 
 /* ===== الإعدادات ===== */
-const SETTINGS = {markup_pct:100, low_stock:1, whatsapp:'', studio_name:'Bellarosita', max_discount_pct:10};
+const SETTINGS = {markup_pct:100, low_stock:1, whatsapp:'', studio_name:'Bella Rosita', max_discount_pct:10};
 const LS_SET='br_settings_v1', LS_MOV='br_movements_v1', LS_RES='br_res_v1';
 const lsGet = (k,d) => { try{ return JSON.parse(localStorage.getItem(k)) ?? d; }catch{ return d; } };
 const lsSet = (k,v) => localStorage.setItem(k, JSON.stringify(v));
@@ -321,13 +321,16 @@ async function drawCard(){
   const f=arr[0], W=1080, H={post:1350,story:1920,square:1080}[$('#mkFormat').value], g=c.getContext('2d');
   let img=null; if(mkPhoto){ try{ img=await loadImg(photoSrc(mkPhoto)); }catch{} } if(seq!==drawSeq) return;
   c.width=W; c.height=H; g.direction='rtl';
-  const brand='#8a3d5c', panelH=Math.round(H*0.24), imgH=H-panelH;
-  g.fillStyle='#f6e9ee'; g.fillRect(0,0,W,imgH);
+  const brand='#8c6d3f', panelH=Math.round(H*0.24), imgH=H-panelH;
+  g.fillStyle='#f6f0e6'; g.fillRect(0,0,W,imgH);
   if(img){ const s=Math.max(W/img.width, imgH/img.height), w=img.width*s, h=img.height*s; g.drawImage(img,(W-w)/2,(imgH-h)/2,w,h); }
   else { g.fillStyle=brand; g.font='bold 60px Tahoma, Arial'; g.textAlign='center'; g.fillText('📷 بدون صورة', W/2, imgH/2); }
-  // اسم الاستديو أعلى الصورة
-  g.font='bold 44px Georgia, serif'; g.textAlign='center'; const nm=SETTINGS.studio_name||'Bellarosita', nw=g.measureText(nm).width+60;
-  g.fillStyle='rgba(255,255,255,.85)'; g.fillRect((W-nw)/2,36,nw,70); g.fillStyle=brand; g.fillText(nm, W/2, 86);
+  // الشعار أعلى الصورة
+  if(LOGO.full){ const lh=150, lw=LOGO.full.width*lh/LOGO.full.height, bw=lw+70, bh=lh+40, bx=(W-bw)/2, by=30;
+    g.fillStyle='rgba(255,255,255,.9)'; if(g.roundRect){ g.beginPath(); g.roundRect(bx,by,bw,bh,22); g.fill(); } else g.fillRect(bx,by,bw,bh);
+    g.drawImage(LOGO.full,(W-lw)/2,by+20,lw,lh); }
+  else { g.font='bold 44px Georgia, serif'; g.textAlign='center'; const nm=SETTINGS.studio_name||'Bella Rosita', nw=g.measureText(nm).width+60;
+    g.fillStyle='rgba(255,255,255,.85)'; g.fillRect((W-nw)/2,36,nw,70); g.fillStyle=brand; g.fillText(nm, W/2, 86); }
   const head=$('#mkHeadline').value.trim();
   if(head){ g.font='bold 50px Tahoma, Arial'; const hw=g.measureText(head).width+70; g.fillStyle=brand; g.fillRect(W-hw-40,imgH-110,hw,80); g.fillStyle='#fff'; g.textAlign='right'; g.fillText(head, W-75, imgH-52); }
   // شارة السعر (دائرة على الصورة)
@@ -368,7 +371,7 @@ $('#catBuild').onclick=async()=>{
     .filter(x=>(!inStock||x.avail.length)&&(noPh||x.ph));
   if(!list.length) return alert('لا توجد منتجات مطابقة (جرّب "يشمل بدون صور").');
   const wa=SETTINGS.whatsapp?SETTINGS.whatsapp.replace(/^966/,'0'):'';
-  $('#printArea').innerHTML=`<div class="catPage"><div class="catHead"><h1>${esc(SETTINGS.studio_name||'Bellarosita')}</h1><div>كتالوج ${esc(today())}${wa?` · للطلب واتساب ${esc(wa)}`:''}</div></div>
+  $('#printArea').innerHTML=`<div class="catPage"><div class="catHead"><img src="assets/logo.png" alt="${esc(SETTINGS.studio_name||'Bella Rosita')}"><div>كتالوج ${esc(today())}${wa?` · للطلب واتساب ${esc(wa)}`:''}</div></div>
     <div class="catGrid">${list.map(x=>`<div class="catItem">${x.ph?`<img src="${esc(photoSrc(x.ph))}">`:'<div class="noimg">بدون صورة</div>'}
       <div class="t"><b>${esc(x.f.titleAr||`${CAT_AR[x.f.category]||'فستان'} ${COLOR_AR[x.f.color]||x.f.color}`)}</b><br>موديل ${esc(x.f.model)}${prices&&x.f.price!=null?` · <b>${x.f.price} ر.س</b>`:''}<br><small>المقاسات: ${esc(x.avail.join(' · ')||'—')}</small></div></div>`).join('')}</div></div>`;
   await Promise.all([...$('#printArea').querySelectorAll('img')].map(im=>im.complete?0:new Promise(r=>{im.onload=im.onerror=r;})));

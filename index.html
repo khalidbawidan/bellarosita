@@ -4,22 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Bellarosita">
-<meta name="theme-color" content="#8a3d5c">
-<title>جرد المخزون — Bellarosita</title>
-<link rel="stylesheet" href="style.css?v=4">
+<meta name="apple-mobile-web-app-title" content="Bella Rosita">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="theme-color" content="#ffffff">
+<title>جرد المخزون — Bella Rosita</title>
+<link rel="stylesheet" href="style.css?v=5">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=4"></script>
+<script src="config.js?v=5"></script>
 </head>
 <body>
 <div id="login" hidden>
   <form id="loginForm" class="card">
-    <h2>🌹 Bellarosita</h2>
-    <p class="hint">تسجيل الدخول لنظام الجرد</p>
+    <img src="assets/logo.png" alt="Bella Rosita Boutique" class="loginLogo">
+    <p class="hint" style="text-align:center">تسجيل الدخول لنظام الجرد</p>
     <label>اسم المستخدم<input id="lUser" autocomplete="username" autocapitalize="none" required></label>
     <label>كلمة المرور<input id="lPass" type="password" autocomplete="current-password" required></label>
     <button class="primary" type="submit">دخول</button>
@@ -27,7 +29,7 @@
   </form>
 </div>
 <header>
-  <h1>🌹 جرد المخزون</h1>
+  <h1><img src="assets/icon.png" alt="" class="hIcon"><span>Bella Rosita<small>جرد المخزون</small></span></h1>
   <span><span id="headStats"></span> <span id="userBar" hidden> · <b id="userName"></b> <button id="btnLogout" class="small">خروج</button></span></span>
 </header>
 
@@ -169,7 +171,8 @@
           <option value="40x30">40×30 مم</option>
           <option value="50x40">50×40 مم</option>
         </select></label>
-        <label>الاسم على الليبل<input id="lStore" value="Bellarosita"></label>
+        <label>الاسم على الليبل<input id="lStore" value="Bella Rosita"></label>
+        <label>رأس الليبل<select id="lHead"><option value="icon">الشعار + الاسم</option><option value="logo">الشعار الكامل (صغير — للمقاس 50×40)</option><option value="text">الاسم فقط</option></select></label>
       </div>
       <div id="labelStats" class="hint"></div>
       <div class="row">
@@ -303,7 +306,7 @@
 </dialog>
 <div id="printArea"></div>
 <div id="toast"></div>
-<script src="app.js?v=4"></script>
-<script src="features.js?v=4"></script>
+<script src="app.js?v=5"></script>
+<script src="features.js?v=5"></script>
 </body>
 </html>

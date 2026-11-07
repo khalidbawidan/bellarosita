@@ -26,6 +26,11 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('sh
 function download(name, blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000); }
 function today(){ return new Date().toISOString().slice(0,10); }
 
+/* ===== الشعار ===== */
+const LOGO = {};
+for(const [k,src] of Object.entries({icon:'assets/icon.png', iconBlack:'assets/icon-black.png', full:'assets/logo.png', black:'assets/logo-black.png', white:'assets/logo-white.png'})){
+  const im=new Image(); im.onload=()=>{ LOGO[k]=im; if(k==='iconBlack'||k==='black') window.renderLabels&&document.querySelector('#tab-labels.active')&&renderLabels(); }; im.src=src; }
+
 /* ===== التخزين ===== */
 let items = [];
 const CFG = window.APP_CONFIG || {};
@@ -336,8 +341,11 @@ function labelRows(){
 function drawLabel(it, size){
   const [W,H]=LABEL_PX[size]; const c=document.createElement('canvas'); c.width=W; c.height=H; const g=c.getContext('2d');
   g.fillStyle='#fff'; g.fillRect(0,0,W,H); g.fillStyle='#000'; g.textAlign='center';
-  const store=$('#lStore').value.trim();
-  g.font=`bold ${Math.round(H*0.1)}px Arial`; g.fillText(store || it.brand || '', W/2, H*0.12);
+  const store=$('#lStore').value.trim(), head=$('#lHead').value;
+  if(head==='logo' && LOGO.black){ const h=H*0.15, w=LOGO.black.width*h/LOGO.black.height; g.drawImage(LOGO.black,(W-w)/2,H*0.015,w,h); }
+  else if(head==='icon' && LOGO.iconBlack){ g.font=`bold ${Math.round(H*0.1)}px Georgia, serif`; const t=store||it.brand||'', tw=g.measureText(t).width, ih=H*0.13, iw=LOGO.iconBlack.width*ih/LOGO.iconBlack.height, gap=8, x0=(W-(iw+gap+tw))/2;
+    g.drawImage(LOGO.iconBlack, x0, H*0.02, iw, ih); g.textAlign='left'; g.fillText(t, x0+iw+gap, H*0.12); g.textAlign='center'; }
+  else { g.font=`bold ${Math.round(H*0.1)}px Arial`; g.fillText(store || it.brand || '', W/2, H*0.12); }
   const bc=document.createElement('canvas');
   JsBarcode(bc, skuOf(it), {format:'CODE128', displayValue:false, margin:0, height:Math.round(H*0.38), width:2});
   const bw=Math.min(W-20, bc.width); g.drawImage(bc,(W-bw)/2,H*0.17,bw,H*0.38);
@@ -355,7 +363,7 @@ function renderLabels(){
   const box=$('#labelPreview'); box.innerHTML='';
   if(window.JsBarcode) [...new Map(rows.map(r=>[r.id,r])).values()].slice(0,12).forEach(r=>box.appendChild(drawLabel(r,$('#lSize').value)));
 }
-['#lModel','#lMode','#lSize','#lStore'].forEach(s=>$(s).addEventListener('change',renderLabels));
+['#lModel','#lMode','#lSize','#lStore','#lHead'].forEach(s=>$(s).addEventListener('change',renderLabels));
 $('#btnLabelsXlsx').onclick=()=>{ const rows=labelRows(); if(!rows.length) return toast('لا توجد ليبلات');
   writeXlsx(`ليبلات-niimbot-${today()}.xlsx`, {'Labels':rows.map(i=>({Barcode:skuOf(i),Model:i.model,Size:i.size,Color:i.color,Price:i.price!=null?`${i.price} SAR`:'',Brand:i.brand||'',Store:$('#lStore').value}))}); };
 $('#btnLabelsPng').onclick=async()=>{ const rows=labelRows(); if(!rows.length) return toast('لا توجد ليبلات');
