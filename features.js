@@ -424,11 +424,11 @@ $('#repRun').onclick=async()=>{
   const from=$('#repFrom').value, to=$('#repTo').value; if(!from||!to) return toast('اختر الفترة');
   const toEnd=new Date(to); toEnd.setDate(toEnd.getDate()+1); const toIso=toEnd.toISOString().slice(0,10);
   if(REMOTE){ if(!HAS_V2) return alert(V2_MSG);
-    const all=[]; for(let f=0;;f+=1000){ const {data,error}=await sb.from('movements').select('*').in('type',['sale','return','damage']).gte('at',from).lt('at',toIso).order('id').range(f,f+999); if(error) return alert(error.message); all.push(...data); if(data.length<1000) break; }
+    const all=[]; for(let f=0;;f+=1000){ const {data,error}=await sb.from('movements').select('*').gte('at',from).lt('at',toIso).order('id').range(f,f+999); if(error) return alert(error.message); all.push(...data); if(data.length<1000) break; }
     if(isAdmin()){ const cm=new Map(); for(let k=0;k<all.length;k+=200){ const {data}=await sb.from('movement_costs').select('movement_id,cost').in('movement_id',all.slice(k,k+200).map(m=>m.id)); (data||[]).forEach(r=>cm.set(r.movement_id,nOrNull(r.cost))); }
       all.forEach(m=>m.cost=cm.get(m.id)??null); }
     repRows=all; }
-  else repRows=lsGet(LS_MOV,[]).filter(m=>['sale','return','damage'].includes(m.type)&&m.at>=from&&m.at<toIso);
+  else repRows=lsGet(LS_MOV,[]).filter(m=>m.at>=from&&m.at<toIso);
   const sales=repRows.filter(m=>m.type==='sale'), rets=repRows.filter(m=>m.type==='return'), dmg=repRows.filter(m=>m.type==='damage');
   const custRets=rets.filter(m=>m.channel!=='salla'), cancels=rets.filter(m=>m.channel==='salla');   // إلغاءات سلة منفصلة عن مرتجعات العميلات
   const pcs=sales.reduce((s,m)=>s+m.qty,0)-rets.reduce((s,m)=>s+m.qty,0);
@@ -437,17 +437,29 @@ $('#repRun').onclick=async()=>{
   const by=(key)=>{ const o={}; sales.forEach(m=>{ const k=key(m); (o[k] ||= {pcs:0,rev:0}); o[k].pcs+=m.qty; o[k].rev+=m.qty*(+m.price||0); });
     rets.forEach(m=>{ const k=key(m); (o[k] ||= {pcs:0,rev:0}); o[k].pcs-=m.qty; o[k].rev-=m.qty*(+m.price||0); }); return Object.entries(o).sort((a,b)=>b[1].pcs-a[1].pcs); };
   const tbl=(t,rows,lab)=>`<h4>${t}</h4><table><tr><th>${lab}</th><th>قطع</th><th>المبيعات</th></tr>${rows.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v.pcs}</td><td>${money(v.rev)}</td></tr>`).join('')}</table>`;
-  $('#repOut').innerHTML = repRows.length ? `<div class="statCards">
+  // ---- حركة المخزون: تعتمد على stock_delta (التغيّر الفعلي) ----
+  const delta=m=>m.stock_delta!=null?Number(m.stock_delta):(m.type==='adjust'?m.qty:(SIGN[m.type]||1)*m.qty);
+  const sumD=f=>repRows.filter(f).reduce((s,m)=>s+delta(m),0);
+  const stockRows=[['📦 استلام بضاعة',sumD(m=>m.type==='receive')],['🛍 مبيعات الاستديو والأونلاين',sumD(m=>m.type==='sale'&&m.channel!=='salla')],
+    ['🛒 مبيعات سلة',sumD(m=>m.type==='sale'&&m.channel==='salla')],['↩️ مرتجعات العميلات',sumD(m=>m.type==='return'&&m.channel!=='salla')],
+    ['✖️ إلغاءات سلة',sumD(m=>m.type==='return'&&m.channel==='salla')],['⚠️ تالف / مفقود',sumD(m=>m.type==='damage')],['🔢 تعديلات الجرد',sumD(m=>m.type==='adjust')]];
+  const net=stockRows.reduce((s,r)=>s+r[1],0);
+  const short=repRows.filter(m=>m.channel==='salla'&&m.type==='sale'&&m.stock_delta!=null&&Math.abs(m.stock_delta)<m.qty);
+  const stockHtml=`<h4>📊 حركة المخزون الفعلية (قطع دخلت وطلعت)</h4><table>${stockRows.filter(r=>r[1]).map(([k,v])=>`<tr><td>${k}</td><td class="${v<0?'bad':'ok'}"><b>${v>0?'+':''}${v}</b></td></tr>`).join('')}
+    <tr><td><b>صافي التغيّر في المخزون</b></td><td><b>${net>0?'+':''}${net}</b></td></tr></table>
+    ${short.length?`<p class="warn">⚠️ ${short.length} طلب سلة انطلب فيه أكثر من المتوفر في الموقع (انطلب ${short.reduce((s,m)=>s+m.qty,0)} وانخصم ${short.reduce((s,m)=>s-m.stock_delta,0)}) — راجع مزامنة الكميات.</p>`:''}`;
+  $('#repOut').innerHTML = !repRows.length ? '<p class="hint">لا توجد عمليات في هذه الفترة.</p>' : !(sales.length||rets.length) ? `<p class="hint">لا توجد مبيعات في هذه الفترة.</p>${stockHtml}` : `<h4>💰 المبيعات (حسب الكمية المباعة)</h4><div class="statCards">
     <div class="stat"><b>${pcs}</b><span>قطع مباعة (صافي)</span></div><div class="stat"><b>${money(rev)}</b><span>المبيعات ر.س</span></div>
     ${isAdmin()?`<div class="stat"><b>${costed.length?money(Math.round(rev-cost)):'—'}</b><span>الربح${costed.length<sales.length+rets.length?' (لما فيه تكلفة)':''}</span></div>`:''}
     <div class="stat"><b>${custRets.reduce((s,m)=>s+m.qty,0)} / ${cancels.reduce((s,m)=>s+m.qty,0)} / ${dmg.reduce((s,m)=>s+m.qty,0)}</b><span>مرتجع / إلغاء سلة / تالف</span></div></div>
     ${tbl('الأكثر مبيعاً حسب الموديل', by(m=>`${m.model} ${COLOR_AR[m.color]||m.color||''}`).slice(0,10),'الموديل')}
     ${tbl('حسب المقاس', by(m=>m.size).sort((a,b)=>sizeIdx(a[0])-sizeIdx(b[0])),'المقاس')}
     ${tbl('حسب اللون', by(m=>COLOR_AR[m.color]||m.color),'اللون')}
-    ${tbl('حسب القناة', by(m=>({studio:'الاستديو',online:'أونلاين',salla:'متجر سلة'}[m.channel]||m.channel)),'القناة')}` : '<p class="hint">لا توجد مبيعات في هذه الفترة.</p>';
+    ${tbl('حسب القناة', by(m=>({studio:'الاستديو',online:'أونلاين',salla:'متجر سلة'}[m.channel]||m.channel)),'القناة')}
+    ${stockHtml}`;
 };
 $('#repXlsx').onclick=()=>{ if(!repRows.length) return toast('اعرض التقرير أولاً');
-  writeXlsx(`تقرير-مبيعات-${$('#repFrom').value}_${$('#repTo').value}.xlsx`,{'الحركات':repRows.map(m=>({'التاريخ':fmtDate(m.at),'العملية':TYPE_AR[m.type],'رقم':m.ref,'الفاتورة الأصلية':m.orig_ref||'','الكود':m.sku,'الموديل':m.model,'اللون':m.color,'المقاس':m.size,'العدد':m.qty,'تغيّر المخزون':m.stock_delta??'','السعر':m.price,...(isAdmin()?{'التكلفة':m.cost}:{}),'القناة':m.channel,'العميلة':m.customer,'بواسطة':m.username,'ملاحظة':m.note}))}); };
+  writeXlsx(`تقرير-حركات-${$('#repFrom').value}_${$('#repTo').value}.xlsx`,{'الحركات':repRows.map(m=>({'التاريخ':fmtDate(m.at),'العملية':TYPE_AR[m.type],'رقم':m.ref,'الفاتورة الأصلية':m.orig_ref||'','الكود':m.sku,'الموديل':m.model,'اللون':m.color,'المقاس':m.size,'العدد':m.qty,'تغيّر المخزون':m.stock_delta??'','السعر':m.price,...(isAdmin()?{'التكلفة':m.cost}:{}),'القناة':m.channel,'العميلة':m.customer,'بواسطة':m.username,'ملاحظة':m.note}))}); };
 { const base=TABS.summary; TABS.summary=()=>{ base(); renderReports(); }; }
 { const base=TABS.data; TABS.data=()=>{ base(); renderSettings(); }; }
 
