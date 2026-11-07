@@ -205,6 +205,13 @@ drop policy if exists "photos bucket delete" on storage.objects;
 create policy "photos bucket delete" on storage.objects for delete to authenticated
   using (bucket_id = 'photos' and (public.is_admin() or owner = auth.uid()));
 
+-- صلاحيات صريحة (تعمل حتى لو كان خيار "Automatically expose new tables" مطفأ) — الحماية الفعلية عبر RLS أعلاه
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.items, public.photos to authenticated;
+grant select, update on public.profiles to authenticated;
+grant select on public.audit_log to authenticated;
+revoke all on public.items, public.photos, public.profiles, public.audit_log from anon;
+
 grant execute on function public.count_scan(text) to authenticated;
 grant execute on function public.start_count()   to authenticated;
 grant execute on function public.apply_count()   to authenticated;
