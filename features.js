@@ -236,8 +236,8 @@ $('#resList').addEventListener('click',async e=>{ const d=e.target.dataset;
 });
 function renderMovements(){
   $('#movList').innerHTML = movements.length ? `<table><tr><th>الوقت</th><th>العملية</th><th>الكود</th><th>العدد</th><th>السعر</th><th>بواسطة</th></tr>${movements.map(m=>`<tr>
-    <td><small>${esc(fmtDate(m.at))}</small></td><td>${esc(TYPE_AR[m.type]||m.type)}${m.customer?`<br><small>${esc(m.customer)}</small>`:''}</td><td class="sku">${esc(m.sku||'')}</td>
-    <td class="${(SIGN[m.type]||1)<0?'bad':'ok'}">${m.type==='adjust'?(m.qty>0?'+':'')+m.qty:((SIGN[m.type]||1)<0?'−':'+')+m.qty}</td><td>${m.price!=null&&m.type==='sale'?money(m.price):''}</td><td><small>${esc(m.username||'')}</small></td></tr>`).join('')}</table>` : '<p class="hint">لا توجد عمليات بعد.</p>';
+    <td><small>${esc(fmtDate(m.at))}</small></td><td>${esc(m.type==='return'&&m.channel==='salla'?'إلغاء سلة':m.channel==='salla'&&m.type==='sale'?'بيع سلة':(TYPE_AR[m.type]||m.type))}${m.customer?`<br><small>${esc(m.customer)}</small>`:''}</td><td class="sku">${esc(m.sku||'')}</td>
+    <td class="${(m.stock_delta??(SIGN[m.type]||1)*m.qty)<0?'bad':'ok'}">${m.type==='adjust'?(m.qty>0?'+':'')+m.qty:((SIGN[m.type]||1)<0?'−':'+')+m.qty}${m.stock_delta!=null&&m.type!=='adjust'&&Math.abs(m.stock_delta)!==m.qty?`<br><small class="warn">المخزون ${m.stock_delta>0?'+':''}${m.stock_delta}</small>`:''}</td><td>${m.price!=null&&m.type==='sale'?money(m.price):''}</td><td><small>${esc(m.username||'')}</small></td></tr>`).join('')}</table>` : '<p class="hint">لا توجد عمليات بعد.</p>';
 }
 TABS.ops = renderOps;
 
@@ -430,6 +430,7 @@ $('#repRun').onclick=async()=>{
     repRows=all; }
   else repRows=lsGet(LS_MOV,[]).filter(m=>['sale','return','damage'].includes(m.type)&&m.at>=from&&m.at<toIso);
   const sales=repRows.filter(m=>m.type==='sale'), rets=repRows.filter(m=>m.type==='return'), dmg=repRows.filter(m=>m.type==='damage');
+  const custRets=rets.filter(m=>m.channel!=='salla'), cancels=rets.filter(m=>m.channel==='salla');   // إلغاءات سلة منفصلة عن مرتجعات العميلات
   const pcs=sales.reduce((s,m)=>s+m.qty,0)-rets.reduce((s,m)=>s+m.qty,0);
   const rev=sales.reduce((s,m)=>s+m.qty*(+m.price||0),0)-rets.reduce((s,m)=>s+m.qty*(+m.price||0),0);
   const costed=[...sales,...rets].filter(m=>m.cost!=null), cost=costed.reduce((s,m)=>s+(m.type==='sale'?1:-1)*m.qty*m.cost,0);
@@ -439,14 +440,14 @@ $('#repRun').onclick=async()=>{
   $('#repOut').innerHTML = repRows.length ? `<div class="statCards">
     <div class="stat"><b>${pcs}</b><span>قطع مباعة (صافي)</span></div><div class="stat"><b>${money(rev)}</b><span>المبيعات ر.س</span></div>
     ${isAdmin()?`<div class="stat"><b>${costed.length?money(Math.round(rev-cost)):'—'}</b><span>الربح${costed.length<sales.length+rets.length?' (لما فيه تكلفة)':''}</span></div>`:''}
-    <div class="stat"><b>${rets.reduce((s,m)=>s+m.qty,0)} / ${dmg.reduce((s,m)=>s+m.qty,0)}</b><span>مرتجع / تالف</span></div></div>
+    <div class="stat"><b>${custRets.reduce((s,m)=>s+m.qty,0)} / ${cancels.reduce((s,m)=>s+m.qty,0)} / ${dmg.reduce((s,m)=>s+m.qty,0)}</b><span>مرتجع / إلغاء سلة / تالف</span></div></div>
     ${tbl('الأكثر مبيعاً حسب الموديل', by(m=>`${m.model} ${COLOR_AR[m.color]||m.color||''}`).slice(0,10),'الموديل')}
     ${tbl('حسب المقاس', by(m=>m.size).sort((a,b)=>sizeIdx(a[0])-sizeIdx(b[0])),'المقاس')}
     ${tbl('حسب اللون', by(m=>COLOR_AR[m.color]||m.color),'اللون')}
     ${tbl('حسب القناة', by(m=>({studio:'الاستديو',online:'أونلاين',salla:'متجر سلة'}[m.channel]||m.channel)),'القناة')}` : '<p class="hint">لا توجد مبيعات في هذه الفترة.</p>';
 };
 $('#repXlsx').onclick=()=>{ if(!repRows.length) return toast('اعرض التقرير أولاً');
-  writeXlsx(`تقرير-مبيعات-${$('#repFrom').value}_${$('#repTo').value}.xlsx`,{'الحركات':repRows.map(m=>({'التاريخ':fmtDate(m.at),'العملية':TYPE_AR[m.type],'رقم':m.ref,'الفاتورة الأصلية':m.orig_ref||'','الكود':m.sku,'الموديل':m.model,'اللون':m.color,'المقاس':m.size,'العدد':m.qty,'السعر':m.price,...(isAdmin()?{'التكلفة':m.cost}:{}),'القناة':m.channel,'العميلة':m.customer,'بواسطة':m.username,'ملاحظة':m.note}))}); };
+  writeXlsx(`تقرير-مبيعات-${$('#repFrom').value}_${$('#repTo').value}.xlsx`,{'الحركات':repRows.map(m=>({'التاريخ':fmtDate(m.at),'العملية':TYPE_AR[m.type],'رقم':m.ref,'الفاتورة الأصلية':m.orig_ref||'','الكود':m.sku,'الموديل':m.model,'اللون':m.color,'المقاس':m.size,'العدد':m.qty,'تغيّر المخزون':m.stock_delta??'','السعر':m.price,...(isAdmin()?{'التكلفة':m.cost}:{}),'القناة':m.channel,'العميلة':m.customer,'بواسطة':m.username,'ملاحظة':m.note}))}); };
 { const base=TABS.summary; TABS.summary=()=>{ base(); renderReports(); }; }
 { const base=TABS.data; TABS.data=()=>{ base(); renderSettings(); }; }
 
