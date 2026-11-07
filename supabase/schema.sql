@@ -212,6 +212,7 @@ grant select, update on public.profiles to authenticated;
 grant select on public.audit_log to authenticated;
 revoke all on public.items, public.photos, public.profiles, public.audit_log from anon;
 
+revoke execute on function public.count_scan(text), public.start_count(), public.apply_count() from public, anon;
 grant execute on function public.count_scan(text) to authenticated;
 grant execute on function public.start_count()   to authenticated;
 grant execute on function public.apply_count()   to authenticated;
