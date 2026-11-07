@@ -137,3 +137,8 @@ revoke all on public.salla_products, public.salla_variants, public.salla_orders,
 
 revoke execute on function public.apply_salla_order(bigint, text, jsonb, text), public.cancel_salla_order(bigint) from public, anon, authenticated;
 grant execute on function public.apply_salla_order(bigint, text, jsonb, text), public.cancel_salla_order(bigint) to service_role;
+
+-- خدمات سلة (service_role) تحتاج الوصول للجداول — صريحة احتياطاً
+grant usage on schema public to service_role;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
