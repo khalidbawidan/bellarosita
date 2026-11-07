@@ -105,7 +105,8 @@ begin
     if not found or m.item_id is null then continue; end if;
     update public.items set qty = qty + d where id = m.item_id;
     insert into public.movements (username, type, ref, orig_ref, item_id, sku, model, color, size, qty, price, channel, customer, note)
-    values ('سلة', 'return', 'SALLA-X-' || coalesce(o.reference_id, o.order_id::text), m.ref, m.item_id, m.sku, m.model, m.color, m.size, m.qty, m.price, 'salla', m.customer, 'إلغاء طلب سلة')
+    values ('سلة', 'return', 'SALLA-X-' || coalesce(o.reference_id, o.order_id::text), m.ref, m.item_id, m.sku, m.model, m.color, m.size, m.qty, m.price, 'salla', m.customer,
+            case when d < m.qty then 'إلغاء طلب سلة — رجع للمخزون ' || d || ' فقط (الباقي ما كان مخصوماً لأن المخزون كان أقل)' else 'إلغاء طلب سلة' end)
     returning id into mid;
     insert into public.movement_costs (movement_id, cost) select mid, mc.cost from public.movement_costs mc where mc.movement_id = m.id;
     n := n + 1;
