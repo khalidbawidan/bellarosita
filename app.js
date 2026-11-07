@@ -40,10 +40,10 @@ let HAS_V2 = !REMOTE;   // هل شُغّل تحديث قاعدة البيانا�
 const nOrNull = v => v==null ? null : Number(v);
 const toRow = i => ({id:i.id, sku:skuOf(i)||null, model:i.model||'', brand:i.brand||'', category:i.category||'Eid Dress', color:i.color, size:i.size,
   qty:Math.max(0, Math.round(i.qty||0)), price:i.price, compare_at:i.compareAt, title:i.title||'', descr:i.desc||'', counted:i.counted,
-  ...(HAS_V2 ? {cost:i.cost??null, location:i.location||'', title_ar:i.titleAr||'', descr_en:i.descEn||''} : {})});
+  ...(HAS_V2 ? {location:i.location||'', title_ar:i.titleAr||'', descr_en:i.descEn||''} : {})});   // التكلفة في جدول item_costs (للمدير فقط)
 const fromRow = r => ({id:r.id, model:r.model, brand:r.brand, category:r.category, color:r.color, size:r.size, qty:r.qty,
   price:nOrNull(r.price), compareAt:nOrNull(r.compare_at), title:r.title, desc:r.descr, counted:r.counted,
-  cost:nOrNull(r.cost), location:r.location||'', titleAr:r.title_ar||'', descEn:r.descr_en||''});
+  cost:null, location:r.location||'', titleAr:r.title_ar||'', descEn:r.descr_en||''});
 const rowKey = i => JSON.stringify(toRow(i));
 
 async function load(){
@@ -53,6 +53,8 @@ async function load(){
     const {data,error}=await sb.from('items').select('*').range(from,from+999); if(error) throw error;
     all.push(...data); if(data.length<1000) break; }
   items = all.map(fromRow); snap = new Map(items.map(i=>[i.id,rowKey(i)]));
+  if(HAS_V2 && isAdmin()){ const {data}=await sb.from('item_costs').select('item_id,cost'); const m=new Map((data||[]).map(r=>[r.item_id,nOrNull(r.cost)]));
+    items.forEach(i=>i.cost=m.get(i.id)??null); }
 }
 let saving = Promise.resolve();
 function save(){
@@ -83,7 +85,7 @@ let rtTimer;
 function subscribeRealtime(){
   sb.channel('items-live').on('postgres_changes',{event:'*',schema:'public',table:'items'},p=>{
     if(p.eventType==='DELETE'){ items=items.filter(i=>i.id!==p.old.id); snap.delete(p.old.id); }
-    else { const it=fromRow(p.new), ix=items.findIndex(i=>i.id===it.id); if(ix<0) items.push(it); else items[ix]=it; snap.set(it.id,rowKey(it)); }
+    else { const it=fromRow(p.new), ix=items.findIndex(i=>i.id===it.id); if(ix<0) items.push(it); else { it.cost=items[ix].cost; items[ix]=it; } snap.set(it.id,rowKey(it)); }
     clearTimeout(rtTimer); rtTimer=setTimeout(()=>{ if(!document.activeElement?.closest?.('#productList')) renderAll(); },300);
   }).on('postgres_changes',{event:'*',schema:'public',table:'photos'},()=>{ clearTimeout(rtTimer); rtTimer=setTimeout(async()=>{ await refreshPhotos(); thumbUrls.clear(); renderAll(); },500); })
   .subscribe();

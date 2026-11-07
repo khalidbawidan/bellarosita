@@ -7,13 +7,13 @@
 <meta name="apple-mobile-web-app-title" content="Bellarosita">
 <meta name="theme-color" content="#8a3d5c">
 <title>جرد المخزون — Bellarosita</title>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=3"></script>
+<script src="config.js?v=4"></script>
 </head>
 <body>
 <div id="login" hidden>
@@ -83,6 +83,8 @@
         <button data-mode="damage" class="adminOnly">⚠️ تالف</button>
       </div>
       <p class="hint" id="opsHint"></p>
+      <div id="opsOrigBox" class="row" hidden><input id="opsOrigRef" placeholder="رقم فاتورة البيع (مثل S261108-…)" autocapitalize="characters"><button id="opsOrigLoad" class="primary">تحميل الفاتورة</button></div>
+      <p class="hint warn" id="opsDiscHint" hidden></p>
       <div class="row">
         <button id="opsScanBtn" class="primary">📷 مسح باركود</button>
         <input id="opsCode" placeholder="أو اكتب الكود" autocomplete="off">
@@ -253,6 +255,7 @@
       <h3>⚙️ الإعدادات</h3>
       <div class="grid2">
         <label>نسبة الربح المقترحة %<input id="setMarkup" type="number" inputmode="numeric"></label>
+        <label>أقصى خصم للموظف %<input id="setDisc" type="number" inputmode="numeric" min="0" max="100"></label>
         <label>تنبيه النقص عند كمية ≤<input id="setLow" type="number" inputmode="numeric"></label>
         <label>رقم واتساب الاستديو<input id="setWa" inputmode="tel" placeholder="9665xxxxxxxx"></label>
         <label>اسم الاستديو<input id="setName"></label>
@@ -300,7 +303,7 @@
 </dialog>
 <div id="printArea"></div>
 <div id="toast"></div>
-<script src="app.js?v=3"></script>
-<script src="features.js?v=3"></script>
+<script src="app.js?v=4"></script>
+<script src="features.js?v=4"></script>
 </body>
 </html>
