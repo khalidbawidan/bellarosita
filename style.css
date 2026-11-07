@@ -56,3 +56,12 @@ td.sku{font-family:ui-monospace,Menlo,monospace;font-size:12px;direction:ltr;tex
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2b2226;color:#fff;padding:10px 18px;border-radius:20px;opacity:0;transition:.3s;pointer-events:none;z-index:50;font-size:14px}
 #toast.show{opacity:1}
 @media(max-width:520px){.grid2{grid-template-columns:1fr 1fr}td input{width:56px}th,td{padding:6px 4px}}
+/* تسجيل الدخول والصلاحيات */
+#login{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+#login[hidden]{display:none}
+#login form{width:100%;max-width:360px}#login h2{margin:0;color:var(--brand)}
+#login button{width:100%;margin-top:10px}
+body.staff .adminOnly{display:none!important}
+body.remote .localOnly{display:none!important}
+#userBar button{padding:2px 8px;font-size:12px;background:#fff2;color:#fff;border-color:#fff6}
+.audit td{font-size:12px}

@@ -28,8 +28,61 @@ function today(){ return new Date().toISOString().slice(0,10); }
 
 /* ===== التخزين ===== */
 let items = [];
-function load(){ try{ items = JSON.parse(localStorage.getItem(LS_KEY)) || []; }catch{ items=[]; } }
-function save(){ localStorage.setItem(LS_KEY, JSON.stringify(items)); renderAll(); }
+const CFG = window.APP_CONFIG || {};
+const REMOTE = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase);
+const sb = REMOTE ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
+let me = {username:'', role:'admin'};           // في الوضع المحلي: صلاحية كاملة
+const isAdmin = () => me.role === 'admin';
+let snap = new Map();                            // آخر نسخة متزامنة مع السيرفر: id → JSON
+
+const localItems = () => { try{ return JSON.parse(localStorage.getItem(LS_KEY)) || []; }catch{ return []; } };
+const toRow = i => ({id:i.id, sku:skuOf(i)||null, model:i.model||'', brand:i.brand||'', category:i.category||'Eid Dress', color:i.color, size:i.size,
+  qty:Math.max(0, Math.round(i.qty||0)), price:i.price, compare_at:i.compareAt, title:i.title||'', descr:i.desc||'', counted:i.counted});
+const fromRow = r => ({id:r.id, model:r.model, brand:r.brand, category:r.category, color:r.color, size:r.size, qty:r.qty,
+  price:r.price==null?null:Number(r.price), compareAt:r.compare_at==null?null:Number(r.compare_at), title:r.title, desc:r.descr, counted:r.counted});
+const rowKey = i => JSON.stringify(toRow(i));
+
+async function load(){
+  if(!REMOTE){ items = localItems(); return; }
+  const all=[]; for(let from=0;;from+=1000){
+    const {data,error}=await sb.from('items').select('*').range(from,from+999); if(error) throw error;
+    all.push(...data); if(data.length<1000) break; }
+  items = all.map(fromRow); snap = new Map(items.map(i=>[i.id,rowKey(i)]));
+}
+let saving = Promise.resolve();
+function save(){
+  if(!REMOTE){ localStorage.setItem(LS_KEY, JSON.stringify(items)); renderAll(); return; }
+  renderAll();
+  saving = saving.then(pushChanges).catch(async err=>{ alert('لم يتم الحفظ: '+(err.message||err)); await load(); renderAll(); });
+  return saving;
+}
+async function pushChanges(){
+  const ids=new Set(items.map(i=>i.id));
+  const removed=[...snap.keys()].filter(id=>!ids.has(id));
+  const changed=items.filter(i=>snap.get(i.id)!==rowKey(i));
+  if(removed.length){ const {error}=await sb.from('items').delete().in('id',removed); if(error) throw error; removed.forEach(id=>snap.delete(id)); }
+  if(!changed.length) return;
+  if(isAdmin()){
+    for(let k=0;k<changed.length;k+=500){ const part=changed.slice(k,k+500);
+      const {error}=await sb.from('items').upsert(part.map(toRow)); if(error) throw error; part.forEach(i=>snap.set(i.id,rowKey(i))); }
+  } else { // الموظف: عدّاد الجرد فقط
+    for(const i of changed){
+      if(!snap.has(i.id)){ items=items.filter(x=>x!==i); continue; }           // لا يضيف منتجات
+      Object.assign(i, fromRow(JSON.parse(snap.get(i.id))), {counted:i.counted}); // يرجّع أي تعديل غير العدّاد
+      const {error}=await sb.from('items').update({counted:i.counted}).eq('id',i.id); if(error) throw error; snap.set(i.id,rowKey(i)); }
+    renderAll();
+  }
+}
+// تحديثات مباشرة من الأجهزة الأخرى
+let rtTimer;
+function subscribeRealtime(){
+  sb.channel('items-live').on('postgres_changes',{event:'*',schema:'public',table:'items'},p=>{
+    if(p.eventType==='DELETE'){ items=items.filter(i=>i.id!==p.old.id); snap.delete(p.old.id); }
+    else { const it=fromRow(p.new), ix=items.findIndex(i=>i.id===it.id); if(ix<0) items.push(it); else items[ix]=it; snap.set(it.id,rowKey(it)); }
+    clearTimeout(rtTimer); rtTimer=setTimeout(()=>{ if(!document.activeElement?.closest?.('#productList')) renderAll(); },300);
+  }).on('postgres_changes',{event:'*',schema:'public',table:'photos'},()=>{ clearTimeout(rtTimer); rtTimer=setTimeout(async()=>{ await refreshPhotos(); thumbUrls.clear(); renderAll(); },500); })
+  .subscribe();
+}
 
 // IndexedDB للصور
 let dbP;
@@ -90,14 +143,34 @@ function initForm(){
 
 /* ===== عرض المنتجات ===== */
 let photoCache = [];
-async function refreshPhotos(){ photoCache = await photosAll(); }
+const blobUrls = new WeakMap();
+function photoSrc(p){ if(p.url) return p.url; if(!blobUrls.has(p)) blobUrls.set(p, URL.createObjectURL(p.blob)); return blobUrls.get(p); }
+async function photoBlob(p){ return p.blob || await fetch(p.url).then(r=>r.blob()); }
+async function refreshPhotos(){
+  if(!REMOTE){ photoCache = await photosAll(); return; }
+  const {data,error}=await sb.from('photos').select('*'); if(error) throw error;
+  photoCache = data.map(r=>({id:r.id, group:r.grp, n:r.n, path:r.path, url:sb.storage.from('photos').getPublicUrl(r.path).data.publicUrl}));
+}
+async function addPhoto(group, blob){
+  const n=Math.max(0,...photoCache.filter(p=>p.group===group).map(p=>p.n))+1, id=`${group}-${n}`;
+  if(!REMOTE){ const p={id,group,n,blob,at:Date.now()}; await photoPut(p); photoCache.push(p); return; }
+  const path=`${group}/${n}-${Date.now()}.jpg`;
+  const up=await sb.storage.from('photos').upload(path, blob, {contentType:'image/jpeg'}); if(up.error) throw up.error;
+  const {error}=await sb.from('photos').insert({id,grp:group,n,path}); if(error){ await sb.storage.from('photos').remove([path]); throw error; }
+  photoCache.push({id,group,n,path,url:sb.storage.from('photos').getPublicUrl(path).data.publicUrl});
+}
+async function removePhoto(id){
+  if(!REMOTE) return photoDel(id);
+  const p=photoCache.find(x=>x.id===id); const {error}=await sb.from('photos').delete().eq('id',id); if(error) throw error;
+  if(p) await sb.storage.from('photos').remove([p.path]);
+}
 function groups(list){
   const g = new Map();
   for(const it of list){ const k=groupKey(it); if(!g.has(k)) g.set(k,[]); g.get(k).push(it); }
   for(const arr of g.values()) arr.sort((a,b)=>sizeIdx(a.size)-sizeIdx(b.size));
   return [...g.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
 }
-function thumbFor(key){ const p=photoCache.find(x=>x.group===key); return p ? URL.createObjectURL(p.blob) : ''; }
+function thumbFor(key){ const p=photoCache.find(x=>x.group===key); return p ? photoSrc(p) : ''; }
 const thumbUrls = new Map();
 function thumb(key){ if(!thumbUrls.has(key)) thumbUrls.set(key, thumbFor(key)); return thumbUrls.get(key); }
 
@@ -113,6 +186,7 @@ function renderProducts(){
   $('#warnings').innerHTML = bad.length ? `<div class="warnBox">⚠️ <b>${bad.length}</b> صف ينقصه بيانات.
     <ul>${noModel.length?`<li>${noModel.length} بدون رقم موديل — لا يمكن إنشاء كود لها (تظهر بأعلى القائمة تحت "?")</li>`:''}
     <li>${items.filter(i=>i.price==null).length} بدون سعر · ${items.filter(i=>!i.brand).length} بدون براند · ${items.filter(i=>!i.title).length} بدون اسم</li></ul></div>` : '';
+  const ro = isAdmin() ? '' : 'disabled';
   $('#productList').innerHTML = groups(list).map(([key, arr]) => {
     const f=arr[0], tot=arr.reduce((s,i)=>s+(i.qty||0),0), t=thumb(key);
     return `<div class="group"><div class="groupHead">
@@ -122,10 +196,10 @@ function renderProducts(){
       <div><b>${tot}</b> <small>قطعة</small></div></div>
       <table><tr><th>الكود</th><th>المقاس</th><th>الموديل</th><th>الكمية</th><th>السعر</th><th></th></tr>
       ${arr.map(i=>`<tr data-id="${i.id}"><td class="sku">${esc(skuOf(i)||'—')}</td><td>${esc(i.size)}</td>
-        <td><input data-f="model" value="${esc(i.model)}" inputmode="numeric"></td>
-        <td><input data-f="qty" type="number" min="0" value="${i.qty??''}"></td>
-        <td><input data-f="price" type="number" value="${i.price??''}"></td>
-        <td><button class="small" data-del="${i.id}">🗑</button></td></tr>`).join('')}
+        <td><input data-f="model" value="${esc(i.model)}" inputmode="numeric" ${ro}></td>
+        <td><input data-f="qty" type="number" min="0" value="${i.qty??''}" ${ro}></td>
+        <td><input data-f="price" type="number" value="${i.price??''}" ${ro}></td>
+        <td>${ro?'':`<button class="small" data-del="${i.id}">🗑</button>`}</td></tr>`).join('')}
       </table></div>`;
   }).join('') || '<p class="hint">لا توجد منتجات. أضف موديل من الأعلى أو استورد ملف Excel من تبويب "البيانات".</p>';
 }
@@ -154,6 +228,12 @@ function registerCode(code){
   code=String(code).trim().toUpperCase(); if(!code) return;
   const now=Date.now(); if(code===lastCode && now-lastAt<1500) return; lastCode=code; lastAt=now;
   const it=items.find(i=>skuOf(i)===code); const msg=$('#scanMsg');
+  if(it && REMOTE){ // زيادة ذرّية على السيرفر — آمنة عند الجرد من أكثر من جوال
+    sb.rpc('count_scan',{p_sku:code}).then(({data,error})=>{
+      if(error||!data?.length){ beep(false); msg.innerHTML=`<span class="bad">✖ لم يُحفظ المسح: ${esc(error?.message||code)}</span>`; return; }
+      Object.assign(it, fromRow(data[0])); snap.set(it.id,rowKey(it)); beep(true);
+      msg.innerHTML=`<span class="ok">✔ ${esc(code)} — العدد: ${it.counted} / ${it.qty??0}</span>`; renderCount(); });
+    return; }
   if(it){ it.counted=(it.counted||0)+1; localStorage.setItem(LS_KEY, JSON.stringify(items)); beep(true);
     msg.innerHTML=`<span class="ok">✔ ${esc(code)} — العدد: ${it.counted} / ${it.qty??0}</span>`; renderCount(); renderHead(); }
   else { unknown.set(code,(unknown.get(code)||0)+1); beep(false); msg.innerHTML=`<span class="bad">✖ كود غير معروف: ${esc(code)}</span>`; renderCount(); }
@@ -171,10 +251,13 @@ $('#btnScan').onclick=startScan;
 $('#btnManual').onclick=()=>{ registerCode($('#manualCode').value); $('#manualCode').value=''; $('#manualCode').focus(); };
 $('#manualCode').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('#btnManual').click(); } });
 $('#btnNewCount').onclick=()=>{ if(!confirm('بدء جرد جديد؟ سيتم تصفير عدّاد الجرد لكل الأكواد (الكميات المسجلة لا تتغير).')) return;
-  items.forEach(i=>i.counted=0); unknown.clear(); save(); toast('بدأ جرد جديد'); };
+  unknown.clear();
+  if(REMOTE){ sb.rpc('start_count').then(async({error})=>{ if(error) return alert(error.message); await load(); renderAll(); toast('بدأ جرد جديد'); }); return; }
+  items.forEach(i=>i.counted=0); save(); toast('بدأ جرد جديد'); };
 $('#btnApplyCount').onclick=()=>{ const c=items.filter(i=>i.counted!=null && i.counted!==i.qty);
   if(!c.length) return toast('لا توجد فروقات');
   if(!confirm(`اعتماد نتائج الجرد؟ سيتم تحديث الكمية لـ ${c.length} كود لتساوي العدد الفعلي.`)) return;
+  if(REMOTE){ sb.rpc('apply_count').then(async({data,error})=>{ if(error) return alert(error.message); await load(); renderAll(); toast(`تم تحديث ${data} كود`); }); return; }
   c.forEach(i=>i.qty=i.counted); save(); toast('تم تحديث الكميات'); };
 $('#onlyDiff').onchange=renderCount;
 function renderCount(){
@@ -209,25 +292,26 @@ async function renderPhotos(){
     const ps=photoCache.filter(p=>p.group===key).sort((a,b)=>a.n-b.n);
     return `<div class="group"><div class="groupHead"><div style="flex:1"><b>${esc(key)}</b> <small>${esc(COLOR_AR[arr[0].color]||'')} · ${esc(arr[0].title||'')}</small></div>
       <span class="pill ${ps.length?'ok':'warn'}">${ps.length} صورة</span> <button class="small primary" data-shoot="${esc(key)}">📷 تصوير</button></div>
-      ${ps.length?`<div class="photos">${ps.map(p=>`<div class="ph"><img src="${URL.createObjectURL(p.blob)}" alt="${esc(p.id)}"><button data-pdel="${esc(p.id)}">✕</button></div>`).join('')}</div>`:''}</div>`;
+      ${ps.length?`<div class="photos">${ps.map(p=>`<div class="ph"><img src="${esc(photoSrc(p))}" loading="lazy" alt="${esc(p.id)}"><button data-pdel="${esc(p.id)}">✕</button></div>`).join('')}</div>`:''}</div>`;
   }).join('') || '<p class="hint">لا توجد موديلات مكتملة (برقم موديل) للتصوير.</p>';
 }
 $('#onlyNoPhoto').onchange=renderPhotos;
 $('#photoList').addEventListener('click',async e=>{
   if(e.target.dataset.shoot){ photoTarget=e.target.dataset.shoot; $('#photoInput').value=''; $('#photoInput').click(); }
-  if(e.target.dataset.pdel){ if(!confirm('حذف الصورة؟')) return; await photoDel(e.target.dataset.pdel); await refreshPhotos(); thumbUrls.clear(); renderPhotos(); }
+  if(e.target.dataset.pdel){ if(!confirm('حذف الصورة؟')) return; try{ await removePhoto(e.target.dataset.pdel); }catch(err){ return alert('تعذّر الحذف: '+err.message); } await refreshPhotos(); thumbUrls.clear(); renderPhotos(); }
 });
 function compress(file, max=1600){ return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const s=Math.min(1,max/Math.max(img.width,img.height));
   const c=document.createElement('canvas'); c.width=Math.round(img.width*s); c.height=Math.round(img.height*s); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
   c.toBlob(b=>{URL.revokeObjectURL(img.src); res(b);},'image/jpeg',0.85); }; img.onerror=rej; img.src=URL.createObjectURL(file); }); }
 $('#photoInput').onchange=async e=>{
   const files=[...e.target.files]; if(!files.length||!photoTarget) return;
-  for(const f of files){ const n=Math.max(0,...photoCache.filter(p=>p.group===photoTarget).map(p=>p.n))+1;
-    const blob=await compress(f); const p={id:`${photoTarget}-${n}`,group:photoTarget,n,blob,at:Date.now()}; await photoPut(p); photoCache.push(p); }
+  toast('جارٍ حفظ الصور…');
+  try{ for(const f of files) await addPhoto(photoTarget, await compress(f)); }
+  catch(err){ alert('تعذّر رفع الصورة: '+(err.message||err)); }
   thumbUrls.clear(); toast(`تم حفظ ${files.length} صورة لـ ${photoTarget}`); renderPhotos();
 };
 $('#btnZip').onclick=async()=>{ if(!photoCache.length) return toast('لا توجد صور');
-  const z=new JSZip(); photoCache.forEach(p=>z.file(`${p.id}.jpg`,p.blob)); download(`صور-المنتجات-${today()}.zip`, await z.generateAsync({type:'blob'})); };
+  toast('جارٍ تجهيز الملف…'); const z=new JSZip(); for(const p of photoCache) z.file(`${p.id}.jpg`, await photoBlob(p)); download(`صور-المنتجات-${today()}.zip`, await z.generateAsync({type:'blob'})); };
 
 /* ===== الليبلات ===== */
 const LABEL_PX = {'50x30':[400,240],'40x30':[320,240],'50x40':[400,320]}; // 203dpi ≈ 8px/مم
@@ -343,5 +427,52 @@ $('#btnClear').onclick=async()=>{ if(!confirm('مسح كل المنتجات وا
 /* ===== تشغيل ===== */
 function renderHead(){ const pcs=items.reduce((s,i)=>s+(i.qty||0),0); $('#headStats').textContent=`${new Set(items.map(i=>i.model).filter(Boolean)).size} موديل · ${pcs} قطعة`; }
 function renderAll(){ renderHead(); const t=document.querySelector('.tab.active').id.slice(4);
-  ({products:renderProducts,count:renderCount,photos:renderPhotos,labels:renderLabels,summary:renderSummary,data:()=>{}})[t](); }
-load(); initForm(); refreshPhotos().then(renderAll).catch(renderAll); renderAll();
+  ({products:renderProducts,count:renderCount,photos:renderPhotos,labels:renderLabels,summary:renderSummary,data:renderData})[t](); }
+function renderData(){
+  if(!REMOTE) return;
+  const li=localItems(); $('#migrateCard').hidden = !isAdmin();
+  photosAll().then(ph=>{ $('#migrateInfo').textContent = `في هذا الجهاز: ${li.length} كود و ${ph.length} صورة محفوظة محلياً. النقل يضيف الكميات فوق الموجود في قاعدة البيانات للأكواد المتطابقة.`;
+    $('#btnMigrate').disabled = !li.length && !ph.length; }).catch(()=>{});
+  $('#auditCard').hidden = !isAdmin();
+}
+$('#btnMigrate').onclick=async()=>{
+  const li=localItems(), ph=await photosAll().catch(()=>[]);
+  if(!confirm(`نقل ${li.length} كود و ${ph.length} صورة من هذا الجهاز إلى قاعدة البيانات؟`)) return;
+  try{
+    $('#btnMigrate').disabled=true; $('#btnMigrate').textContent='جارٍ النقل…';
+    for(const r of li){ const {id,counted,...rest}=r; upsert({...rest}); }
+    await save(); await saving;
+    let n=0; for(const p of ph){ if(photoCache.some(x=>x.group===p.group && x.n===p.n)) continue; await addPhoto(p.group, p.blob); n++; $('#btnMigrate').textContent=`صور: ${n}/${ph.length}`; }
+    alert(`تم النقل: ${li.length} كود و ${n} صورة.\nالبيانات المحلية ما زالت في الجهاز ولم تُحذف.`);
+  }catch(err){ alert('توقف النقل: '+(err.message||err)); }
+  $('#btnMigrate').textContent='نقل الآن'; await load(); await refreshPhotos(); renderAll();
+};
+$('#btnAudit').onclick=async()=>{
+  const {data,error}=await sb.from('audit_log').select('*').order('id',{ascending:false}).limit(100); if(error) return alert(error.message);
+  const fmt=c=>c? Object.entries(c).filter(([k])=>!['id','updated_at','updated_by'].includes(k)).map(([k,v])=>Array.isArray(v)?`${k}: ${v[0]??'—'} ← ${v[1]??'—'}`:'').filter(Boolean).join(' · ') : '';
+  $('#auditList').innerHTML=`<table class="audit"><tr><th>الوقت</th><th>المستخدم</th><th>العملية</th><th>الكود</th><th>التغيير</th></tr>${data.map(r=>`<tr><td>${esc(new Date(r.at).toLocaleString('ar-SA'))}</td><td>${esc(r.username||'')}</td><td>${esc({insert:'إضافة',update:'تعديل',delete:'حذف',start_count:'بدء جرد'}[r.action]||r.action)}</td><td class="sku">${esc(r.sku||'')}</td><td>${esc(r.action==='update'?fmt(r.changes):'')}</td></tr>`).join('')}</table>`;
+};
+
+async function enterApp(){
+  const {data:{user}}=await sb.auth.getUser(); if(!user) return showLogin();
+  const {data:prof}=await sb.from('profiles').select('username,role').eq('id',user.id).maybeSingle();
+  me={username:prof?.username||user.email.split('@')[0], role:prof?.role||'staff'};
+  document.body.classList.toggle('staff', !isAdmin());
+  $('#userName').textContent=`${me.username}${isAdmin()?' (مدير)':''}`; $('#userBar').hidden=false; $('#login').hidden=true;
+  $('#clearCard').hidden=true;
+  try{ await load(); await refreshPhotos(); }catch(err){ alert('تعذّر تحميل البيانات: '+err.message); }
+  renderAll(); subscribeRealtime();
+}
+function showLogin(){ $('#login').hidden=false; setTimeout(()=>$('#lUser').focus(),50); }
+$('#loginForm').onsubmit=async e=>{
+  e.preventDefault(); $('#loginErr').textContent='';
+  let u=$('#lUser').value.trim().toLowerCase(); if(!u.includes('@')) u=`${u}@${CFG.USERNAME_DOMAIN||'doubleroses.local'}`;
+  const {error}=await sb.auth.signInWithPassword({email:u,password:$('#lPass').value});
+  if(error) return $('#loginErr').textContent = /invalid/i.test(error.message)?'اسم المستخدم أو كلمة المرور غير صحيحة':error.message;
+  $('#lPass').value=''; enterApp();
+};
+$('#btnLogout').onclick=async()=>{ await sb.auth.signOut(); location.reload(); };
+
+initForm();
+if(REMOTE){ document.body.classList.add('remote'); enterApp(); }
+else { load(); refreshPhotos().then(renderAll).catch(renderAll); renderAll(); }

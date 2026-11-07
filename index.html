@@ -12,11 +12,23 @@
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
 </head>
 <body>
+<div id="login" hidden>
+  <form id="loginForm" class="card">
+    <h2>🌹 Double Roses</h2>
+    <p class="hint">تسجيل الدخول لنظام الجرد</p>
+    <label>اسم المستخدم<input id="lUser" autocomplete="username" autocapitalize="none" required></label>
+    <label>كلمة المرور<input id="lPass" type="password" autocomplete="current-password" required></label>
+    <button class="primary" type="submit">دخول</button>
+    <p id="loginErr" class="bad"></p>
+  </form>
+</div>
 <header>
   <h1>🌹 جرد المخزون</h1>
-  <span id="headStats"></span>
+  <span><span id="headStats"></span> <span id="userBar" hidden> · <b id="userName"></b> <button id="btnLogout" class="small">خروج</button></span></span>
 </header>
 
 <nav id="tabs">
@@ -25,13 +37,13 @@
   <button data-tab="photos">الصور</button>
   <button data-tab="labels">الليبلات</button>
   <button data-tab="summary">الملخص</button>
-  <button data-tab="data">البيانات</button>
+  <button data-tab="data" class="adminOnly">البيانات</button>
 </nav>
 
 <main>
   <!-- المنتجات -->
   <section id="tab-products" class="tab active">
-    <details class="card" id="addCard">
+    <details class="card adminOnly" id="addCard">
       <summary>➕ إضافة موديل / مقاسات</summary>
       <div class="grid2">
         <label>رقم الموديل<input id="fModel" inputmode="numeric" placeholder="34185"></label>
@@ -63,7 +75,7 @@
     <div class="card">
       <p class="hint">ابدأ جرداً جديداً، ثم امسح باركود كل قطعة. كل مسح يزيد العدد قطعة واحدة.</p>
       <div class="row">
-        <button id="btnNewCount">بدء جرد جديد</button>
+        <button id="btnNewCount" class="adminOnly">بدء جرد جديد</button>
         <button id="btnScan" class="primary">📷 فتح الكاميرا</button>
       </div>
       <div id="reader"></div>
@@ -76,7 +88,7 @@
     <div class="card">
       <div class="row">
         <label class="chk"><input type="checkbox" id="onlyDiff"> عرض الفروقات فقط</label>
-        <button id="btnApplyCount">اعتماد النتائج</button>
+        <button id="btnApplyCount" class="adminOnly">اعتماد النتائج</button>
         <button id="btnCountReport">تقرير Excel</button>
       </div>
       <div id="countStats"></div>
@@ -152,9 +164,19 @@
         <button id="btnExportSalla">ملف المنتجات لمتجر سلة (Excel)</button>
         <button id="btnBackup">نسخة احتياطية (JSON)</button>
       </div>
-      <p class="hint">⚠️ البيانات محفوظة في هذا المتصفح فقط. خذ نسخة احتياطية بشكل دوري، خصوصاً قبل مسح بيانات Safari.</p>
+      <p class="hint localOnly">⚠️ البيانات محفوظة في هذا المتصفح فقط. خذ نسخة احتياطية بشكل دوري، خصوصاً قبل مسح بيانات Safari.</p>
     </div>
-    <div class="card danger">
+    <div class="card" id="migrateCard" hidden>
+      <h3>نقل البيانات المحلية إلى قاعدة البيانات</h3>
+      <p class="hint" id="migrateInfo"></p>
+      <button id="btnMigrate" class="primary">نقل الآن</button>
+    </div>
+    <div class="card" id="auditCard" hidden>
+      <h3>سجل العمليات (آخر 100)</h3>
+      <button id="btnAudit">عرض</button>
+      <div id="auditList"></div>
+    </div>
+    <div class="card danger" id="clearCard">
       <button id="btnClear">مسح كل البيانات</button>
     </div>
   </section>
