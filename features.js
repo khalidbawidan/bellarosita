@@ -321,16 +321,17 @@ async function drawCard(){
   const f=arr[0], W=1080, H={post:1350,story:1920,square:1080}[$('#mkFormat').value], g=c.getContext('2d');
   let img=null; if(mkPhoto){ try{ img=await loadImg(photoSrc(mkPhoto)); }catch{} } if(seq!==drawSeq) return;
   c.width=W; c.height=H; g.direction='rtl';
-  const brand='#8c6d3f', panelH=Math.round(H*0.24), imgH=H-panelH;
-  g.fillStyle='#f6f0e6'; g.fillRect(0,0,W,imgH);
-  if(img){ const s=Math.max(W/img.width, imgH/img.height), w=img.width*s, h=img.height*s; g.drawImage(img,(W-w)/2,(imgH-h)/2,w,h); }
-  else { g.fillStyle=brand; g.font='bold 60px Tahoma, Arial'; g.textAlign='center'; g.fillText('📷 بدون صورة', W/2, imgH/2); }
-  // الشعار أعلى الصورة
-  if(LOGO.full){ const lh=150, lw=LOGO.full.width*lh/LOGO.full.height, bw=lw+70, bh=lh+40, bx=(W-bw)/2, by=30;
-    g.fillStyle='rgba(255,255,255,.9)'; if(g.roundRect){ g.beginPath(); g.roundRect(bx,by,bw,bh,22); g.fill(); } else g.fillRect(bx,by,bw,bh);
-    g.drawImage(LOGO.full,(W-lw)/2,by+20,lw,lh); }
-  else { g.font='bold 44px Georgia, serif'; g.textAlign='center'; const nm=SETTINGS.studio_name||'Bella Rosita', nw=g.measureText(nm).width+60;
-    g.fillStyle='rgba(255,255,255,.85)'; g.fillRect((W-nw)/2,36,nw,70); g.fillStyle=brand; g.fillText(nm, W/2, 86); }
+  const brand='#8c6d3f', panelH=Math.round(H*0.24), imgH=H-panelH, topH=Math.round(Math.min(W,H)*0.17);
+  // شريط علوي أبيض للشعار — منفصل عن الصورة فلا يغطيها
+  g.fillStyle='#fff'; g.fillRect(0,0,W,topH);
+  if(LOGO.full){ const lh=topH*0.8, lw=LOGO.full.width*lh/LOGO.full.height; g.drawImage(LOGO.full,(W-lw)/2,(topH-lh)/2,lw,lh); }
+  else { g.font='bold 52px Georgia, serif'; g.textAlign='center'; g.fillStyle=brand; g.fillText(SETTINGS.studio_name||'Bella Rosita', W/2, topH/2+18); }
+  g.fillStyle='#c4a574'; g.fillRect(0,topH-3,W,3);
+  // الصورة بين الشريط العلوي واللوحة السفلية
+  const ph=imgH-topH; g.fillStyle='#f6f0e6'; g.fillRect(0,topH,W,ph);
+  if(img){ const s=Math.max(W/img.width, ph/img.height), w=img.width*s, h=img.height*s;
+    g.save(); g.beginPath(); g.rect(0,topH,W,ph); g.clip(); g.drawImage(img,(W-w)/2,topH+(ph-h)/2,w,h); g.restore(); }
+  else { g.fillStyle=brand; g.font='bold 60px Tahoma, Arial'; g.textAlign='center'; g.fillText('📷 بدون صورة', W/2, topH+ph/2); }
   const head=$('#mkHeadline').value.trim();
   if(head){ g.font='bold 50px Tahoma, Arial'; const hw=g.measureText(head).width+70; g.fillStyle=brand; g.fillRect(W-hw-40,imgH-110,hw,80); g.fillStyle='#fff'; g.textAlign='right'; g.fillText(head, W-75, imgH-52); }
   // شارة السعر (دائرة على الصورة)
