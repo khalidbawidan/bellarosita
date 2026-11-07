@@ -42,18 +42,22 @@ let snap = new Map();                            // آخر نسخة متزامن
 
 const localItems = () => { try{ return JSON.parse(localStorage.getItem(LS_KEY)) || []; }catch{ return []; } };
 let HAS_V2 = !REMOTE;   // هل شُغّل تحديث قاعدة البيانات 002 (التكلفة/الموقع/العمليات)
+let HAS_V3 = !REMOTE;   // هل شُغّل تحديث 003 (سلة + SEO)
 const nOrNull = v => v==null ? null : Number(v);
 const toRow = i => ({id:i.id, sku:skuOf(i)||null, model:i.model||'', brand:i.brand||'', category:i.category||'Eid Dress', color:i.color, size:i.size,
   qty:Math.max(0, Math.round(i.qty||0)), price:i.price, compare_at:i.compareAt, title:i.title||'', descr:i.desc||'', counted:i.counted,
-  ...(HAS_V2 ? {location:i.location||'', title_ar:i.titleAr||'', descr_en:i.descEn||''} : {})});   // التكلفة في جدول item_costs (للمدير فقط)
+  ...(HAS_V2 ? {location:i.location||'', title_ar:i.titleAr||'', descr_en:i.descEn||''} : {}),
+  ...(HAS_V3 ? {seo_title:i.seoTitle||'', seo_desc:i.seoDesc||'', seo_keywords:i.seoKw||''} : {})});   // التكلفة في جدول item_costs (للمدير فقط)
 const fromRow = r => ({id:r.id, model:r.model, brand:r.brand, category:r.category, color:r.color, size:r.size, qty:r.qty,
   price:nOrNull(r.price), compareAt:nOrNull(r.compare_at), title:r.title, desc:r.descr, counted:r.counted,
-  cost:null, location:r.location||'', titleAr:r.title_ar||'', descEn:r.descr_en||''});
+  cost:null, location:r.location||'', titleAr:r.title_ar||'', descEn:r.descr_en||'',
+  seoTitle:r.seo_title||'', seoDesc:r.seo_desc||'', seoKw:r.seo_keywords||''});
 const rowKey = i => JSON.stringify(toRow(i));
 
 async function load(){
   if(!REMOTE){ items = localItems(); return; }
   HAS_V2 = !(await sb.from('movements').select('id').limit(1)).error;
+  HAS_V3 = !(await sb.from('salla_products').select('grp').limit(1)).error;
   const all=[]; for(let from=0;;from+=1000){
     const {data,error}=await sb.from('items').select('*').range(from,from+999); if(error) throw error;
     all.push(...data); if(data.length<1000) break; }
@@ -75,8 +79,10 @@ async function pushChanges(){
   if(removed.length){ const {error}=await sb.from('items').delete().in('id',removed); if(error) throw error; removed.forEach(id=>snap.delete(id)); }
   if(!changed.length) return;
   if(isAdmin()){
+    const qtyChanged=changed.filter(i=>{ const o=snap.get(i.id); return o && JSON.parse(o).qty!==Math.max(0,Math.round(i.qty||0)); }).map(i=>i.id);
     for(let k=0;k<changed.length;k+=500){ const part=changed.slice(k,k+500);
       const {error}=await sb.from('items').upsert(part.map(toRow)); if(error) throw error; part.forEach(i=>snap.set(i.id,rowKey(i))); }
+    if(qtyChanged.length && window.sallaStock) sallaStock(qtyChanged);
   } else { // الموظف: عدّاد الجرد فقط
     for(const i of changed){
       if(!snap.has(i.id)){ items=items.filter(x=>x!==i); continue; }           // لا يضيف منتجات
@@ -207,7 +213,7 @@ function renderProducts(){
       <div style="flex:1"><b>${esc(f.model||'? بدون موديل')}</b> · ${esc(COLOR_AR[f.color]||f.color)} <small>${esc(f.brand||'')} · ${esc(CAT_AR[f.category]||f.category||'')}</small>
       ${f.location?`<span class="badge loc">📍 ${esc(f.location)}</span>`:''}<br>
       <small>${esc(f.titleAr||f.title||'— بدون اسم —')}</small></div>
-      <div><b>${tot}</b> <small>قطعة</small>${f.model?` <button class="small adminOnly" data-edit="${esc(key)}">✏️</button>`:''}</div></div>
+      <div><b>${tot}</b> <small>قطعة</small>${f.model?` <button class="small adminOnly" data-edit="${esc(key)}">✏️</button>`:''}${f.model&&window.sallaBadge?sallaBadge(key):''}</div></div>
       <table><tr><th>الكود</th><th>المقاس</th><th>الموديل</th><th>الكمية</th><th>السعر</th><th></th></tr>
       ${arr.map(i=>`<tr data-id="${i.id}"><td class="sku">${esc(skuOf(i)||'—')}</td><td>${esc(i.size)}${typeof reservedQty==='function'&&reservedQty(i.id)?`<span class="badge">محجوز ${reservedQty(i.id)}</span>`:''}</td>
         <td><input data-f="model" value="${esc(i.model)}" inputmode="numeric" ${ro}></td>
@@ -271,7 +277,7 @@ $('#btnNewCount').onclick=()=>{ if(!confirm('بدء جرد جديد؟ سيتم �
 $('#btnApplyCount').onclick=()=>{ const c=items.filter(i=>i.counted!=null && i.counted!==i.qty);
   if(!c.length) return toast('لا توجد فروقات');
   if(!confirm(`اعتماد نتائج الجرد؟ سيتم تحديث الكمية لـ ${c.length} كود لتساوي العدد الفعلي.`)) return;
-  if(REMOTE){ sb.rpc('apply_count').then(async({data,error})=>{ if(error) return alert(error.message); await load(); renderAll(); toast(`تم تحديث ${data} كود`); }); return; }
+  if(REMOTE){ sb.rpc('apply_count').then(async({data,error})=>{ if(error) return alert(error.message); await load(); renderAll(); toast(`تم تحديث ${data} كود`); window.sallaStock&&sallaStock(items.map(i=>i.id)); }); return; }
   c.forEach(i=>i.qty=i.counted); save(); toast('تم تحديث الكميات'); };
 $('#onlyDiff').onchange=renderCount;
 function renderCount(){

@@ -9,13 +9,13 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#ffffff">
 <title>جرد المخزون — Bella Rosita</title>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=8"></script>
+<script src="config.js?v=9"></script>
 </head>
 <body>
 <div id="login" hidden>
@@ -252,6 +252,18 @@
       </div>
       <p class="hint localOnly">⚠️ البيانات محفوظة في هذا المتصفح فقط. خذ نسخة احتياطية بشكل دوري، خصوصاً قبل مسح بيانات Safari.</p>
     </div>
+    <div class="card" id="sallaCard" hidden>
+      <h3>🛒 الربط مع سلة</h3>
+      <div id="sallaStatus"></div>
+      <div class="col">
+        <button id="sallaPushNew" class="primary">رفع المنتجات الجديدة إلى سلة</button>
+        <button id="sallaPushAll">تحديث كل المنتجات في سلة (الأسعار والأوصاف والصور)</button>
+        <button id="sallaStockAll">مزامنة كل الكميات مع سلة</button>
+        <button id="sallaLogBtn">سجل الربط</button>
+      </div>
+      <p class="hint">الكميات تتحدث في سلة تلقائياً بعد كل بيع أو استلام أو جرد. وطلبات سلة تنخصم من المخزون هنا تلقائياً.</p>
+      <div id="sallaLog"></div>
+    </div>
     <div class="card adminOnly" id="settingsCard">
       <h3>⚙️ الإعدادات</h3>
       <div class="grid2">
@@ -299,12 +311,20 @@
     <p class="hint">مميزات الفستان (تُستخدم في توليد الوصف):</p>
     <div id="eChips" class="chips"></div>
     <div class="row"><button type="button" id="eGen">✨ توليد الوصف</button></div>
+    <div id="eSeoBox">
+      <h4>🔎 SEO (محركات البحث)</h4>
+      <label>عنوان الصفحة في جوجل <small id="eSeoTitleN"></small><input id="eSeoTitle"></label>
+      <label>وصف جوجل <small id="eSeoDescN"></small><textarea id="eSeoDesc" rows="2"></textarea></label>
+      <label>الكلمات المفتاحية (افصل بفاصلة)<textarea id="eSeoKw" rows="2"></textarea></label>
+      <p class="hint">سلة تستخدم العنوان والوصف في نتائج جوجل. الكلمات المفتاحية تُستخدم داخل الوصف — اكتبها بالكلمات اللي تبحث عنها العميلات.</p>
+      <button type="button" id="eSeoGen">✨ توليد SEO</button>
+    </div>
     <div class="row"><button value="save" class="primary" id="eSave">حفظ</button><button value="cancel" formnovalidate>إلغاء</button></div>
   </form>
 </dialog>
 <div id="printArea"></div>
 <div id="toast"></div>
-<script src="app.js?v=8"></script>
-<script src="features.js?v=8"></script>
+<script src="app.js?v=9"></script>
+<script src="features.js?v=9"></script>
 </body>
 </html>

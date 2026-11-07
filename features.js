@@ -57,7 +57,7 @@ async function moveStock(type, lines, {customer='',note='',channel='studio',ref=
     await saving;
     const {data,error}=await sb.rpc('stock_move',{p_type:type, p_lines:lines.map(l=>({id:l.id,qty:l.qty,price:l.price??null})),
       p_ref:ref||null, p_customer:customer||null, p_note:note||null, p_channel:channel, p_orig_ref:origRef||null});
-    if(error) throw error; await load(); await loadOps(); renderAll(); return data;
+    if(error) throw error; await load(); await loadOps(); renderAll(); sallaStock(lines.map(l=>l.id)); return data;
   }
   const sign=SIGN[type], hist=lsGet(LS_MOV,[]);
   for(const l of lines){ const it=items.find(i=>i.id===l.id); if(!it) throw new Error('منتج غير موجود');
@@ -82,7 +82,8 @@ async function createReservations(lines,{customer,phone,until,note}){
   await loadOps(); renderAll();
 }
 async function completeReservation(id, price){
-  if(REMOTE){ const {error}=await sb.rpc('complete_reservation',{p_id:id, p_price:price??null}); if(error) throw error; await load(); await loadOps(); renderAll(); return; }
+  if(REMOTE){ const {error}=await sb.rpc('complete_reservation',{p_id:id, p_price:price??null}); if(error) throw error;
+    const r=reservations.find(x=>x.id===id); await load(); await loadOps(); renderAll(); if(r) sallaStock([r.item_id]); return; }
   const all=lsGet(LS_RES,[]), r=all.find(x=>x.id===id); r.status='sold'; lsSet(LS_RES,all);
   try{ await moveStock('sale',[{id:r.item_id,qty:r.qty,price}],{customer:r.customer,note:'من حجز'}); }
   catch(e){ r.status='active'; lsSet(LS_RES,all); await loadOps(); throw e; }
@@ -274,9 +275,16 @@ function openEdit(key){
   $('#editTitle').textContent=`تعديل ${key} — ${COLOR_AR[f.color]||f.color}`;
   $('#eBrand').value=f.brand||''; $('#eCategory').value=f.category||'Eid Dress'; $('#ePrice').value=f.price??''; $('#eCompare').value=f.compareAt??'';
   $('#eCost').value=f.cost??''; $('#eLocation').value=f.location||''; $('#eTitleAr').value=f.titleAr||''; $('#eTitle').value=f.title||'';
-  $('#eDesc').value=f.desc||''; $('#eDescEn').value=f.descEn||''; document.querySelectorAll('#eChips input').forEach(c=>c.checked=false);
+  $('#eDesc').value=f.desc||''; $('#eDescEn').value=f.descEn||''; $('#eSeoTitle').value=f.seoTitle||''; $('#eSeoDesc').value=f.seoDesc||''; $('#eSeoKw').value=f.seoKw||''; updSeoCount();
+  $('#eSeoBox').hidden = REMOTE && !HAS_V3; document.querySelectorAll('#eChips input').forEach(c=>c.checked=false);
   $('#eCost').closest('label').hidden = REMOTE&&!HAS_V2; $('#eSuggest').closest('label').hidden = REMOTE&&!HAS_V2; updSuggest(); $('#editDlg').showModal();
 }
+$('#eSeoGen').onclick=()=>{
+  const arr=items.filter(i=>groupKey(i)===editKey), f={...arr[0], titleAr:$('#eTitleAr').value.trim(), brand:$('#eBrand').value.trim(), category:$('#eCategory').value};
+  const s=genSeo(f, arr.map(i=>i.size)); $('#eSeoTitle').value=s.title; $('#eSeoDesc').value=s.desc; $('#eSeoKw').value=s.keywords; updSeoCount();
+};
+function updSeoCount(){ $('#eSeoTitleN').textContent=`${$('#eSeoTitle').value.length}/60`; $('#eSeoDescN').textContent=`${$('#eSeoDesc').value.length}/160`; }
+$('#eSeoTitle').oninput=updSeoCount; $('#eSeoDesc').oninput=updSeoCount;
 $('#eGen').onclick=()=>{
   const arr=items.filter(i=>groupKey(i)===editKey), f={...arr[0], brand:$('#eBrand').value.trim(), category:$('#eCategory').value, title:''};
   const t=genTexts(f, arr.map(i=>i.size), [...document.querySelectorAll('#eChips input:checked')].map(c=>c.value));
@@ -286,7 +294,8 @@ $('#editDlg').addEventListener('close',()=>{
   if($('#editDlg').returnValue!=='save' || !editKey) return;
   const patch={brand:$('#eBrand').value.trim(), category:$('#eCategory').value, price:num($('#ePrice').value), compareAt:num($('#eCompare').value),
     cost:num($('#eCost').value), location:$('#eLocation').value.trim(), titleAr:$('#eTitleAr').value.trim(), title:$('#eTitle').value.trim(),
-    desc:$('#eDesc').value.trim(), descEn:$('#eDescEn').value.trim()};
+    desc:$('#eDesc').value.trim(), descEn:$('#eDescEn').value.trim(),
+    seoTitle:$('#eSeoTitle').value.trim(), seoDesc:$('#eSeoDesc').value.trim(), seoKw:$('#eSeoKw').value.trim()};
   const grp=items.filter(i=>groupKey(i)===editKey); grp.forEach(i=>Object.assign(i,patch)); save();
   if(REMOTE && HAS_V2) saving.then(async()=>{ const {error}=await sb.from('item_costs').upsert(grp.map(i=>({item_id:i.id,cost:patch.cost,updated_at:new Date().toISOString()})));
     if(error) alert('لم تُحفظ التكلفة: '+error.message); });
@@ -466,3 +475,91 @@ $('#opsOrigLoad').onclick=async()=>{
   if(!cart.length) toast('كل قطع هذه الفاتورة مرتجعة سابقاً'); else toast('عدّل الكمية أو احذف القطع اللي ما رجعت');
   renderCart();
 };
+
+/* ===== SEO ===== */
+const SEO_CAT = {'Eid Dress':['فستان عيد بناتي','فساتين عيد أطفال','فستان عيد للبنات'],'Daily Dress':['فستان بناتي يومي','فساتين أطفال كاجوال'],
+  'Wedding Dress':['فستان زفاف بناتي','فستان أعراس للبنات','فستان وصيفة أطفال'],'Summer Dress':['فستان صيفي بناتي','فساتين أطفال صيفية'],'Winter Dress':['فستان شتوي بناتي','فساتين أطفال شتوية']};
+function genSeo(f, sizes){
+  const s=sizes.slice().sort((a,b)=>sizeIdx(a)-sizeIdx(b)), cAr=COLOR_AR[f.color]||f.color, cat=SEO_CAT[f.category]||['فستان بناتي'];
+  const studio=SETTINGS.studio_name||'Bella Rosita';
+  const kw=[...cat, `فستان ${cAr} للبنات`, 'فساتين مناسبات أطفال', 'فستان أطفال فاخر', f.brand?`${f.brand} فساتين`:'', studio, `موديل ${f.model}`].filter(Boolean);
+  const base=f.titleAr||`${CAT_AR[f.category]||'فستان'} ${cAr}`;
+  let title=`${base} | ${studio}`; if(title.length>60) title=base.slice(0,60);
+  const range = s.length>1 ? `من ${ageAr(s[0])} إلى ${ageAr(s[s.length-1])}` : (s[0]?ageAr(s[0]):'');
+  let desc=`${cat[0]} باللون ال${cAr}، تصميم أنيق لإطلالة أميرة في المناسبات. متوفر ${range}. اطلبيه الآن من ${studio}.`;
+  if(desc.length>160) desc=desc.slice(0,157)+'…';
+  return {title, desc, keywords:[...new Set(kw)].join('، ')};
+}
+
+/* ===== سلة ===== */
+let sallaLinks = new Map();      // grp → {product_id, synced_at, last_error}
+async function loadSallaLinks(){
+  if(!REMOTE || !HAS_V3 || !isAdmin()) return;
+  const {data}=await sb.from('salla_products').select('*'); sallaLinks=new Map((data||[]).map(r=>[r.grp,r]));
+}
+window.sallaBadge = key => {
+  if(!REMOTE || !HAS_V3 || !isAdmin()) return '';
+  const l=sallaLinks.get(key);
+  const st = !l?.product_id ? '<span class="badge">ليس في سلة</span>' : l.last_error ? `<span class="badge" title="${esc(l.last_error)}">⚠️ سلة</span>` : '<span class="badge loc">✓ سلة</span>';
+  return ` ${st} <button class="small" data-salla="${esc(key)}">⬆️ ${l?.product_id?'تحديث':'رفع'}</button>`;
+};
+async function sallaCall(body){
+  const {data,error}=await sb.functions.invoke('salla-sync',{body});
+  if(error){ let m=error.message; try{ const j=await error.context?.json?.(); if(j?.error) m=j.error; }catch{} throw new Error(m); }
+  if(data?.error) throw new Error(data.error); return data;
+}
+let stockTimer=null, stockQueue=new Set();
+window.sallaStock = ids => {        // تجميع ثم إرسال (بعد ثانيتين) — بدون إزعاج المستخدم إلا عند الخطأ
+  if(!REMOTE || !HAS_V3 || !ids?.length) return;
+  ids.forEach(i=>stockQueue.add(i)); clearTimeout(stockTimer);
+  stockTimer=setTimeout(async()=>{ const list=[...stockQueue]; stockQueue.clear();
+    try{ const r=await sallaCall({action:'push_stock', item_ids:list}); if(r.failed?.length) toast(`⚠️ لم تتحدث كمية ${r.failed.length} كود في سلة`); else if(r.updated) toast(`✓ تحدّثت الكميات في سلة (${r.updated})`); }
+    catch(e){ if(!/غير مربوط/.test(e.message)) toast('⚠️ سلة: '+e.message); } },2000);
+};
+async function pushGroups(keys, btn){
+  const groupsArg=keys.map(k=>({grp:k, item_ids:items.filter(i=>groupKey(i)===k && skuOf(i)).map(i=>i.id)})).filter(g=>g.item_ids.length);
+  if(!groupsArg.length) return toast('لا توجد مقاسات بكود');
+  const noPrice=keys.filter(k=>items.some(i=>groupKey(i)===k && i.price==null));
+  if(noPrice.length && !confirm(`منتجات بدون سعر: ${noPrice.join('، ')}\nسلة قد ترفضها. متابعة؟`)) return;
+  const old=btn?.textContent; if(btn){ btn.disabled=true; btn.textContent='جارٍ الرفع…'; }
+  const out=[];
+  try{
+    await saving;
+    for(let k=0;k<groupsArg.length;k+=5){                 // 5 منتجات في كل طلب
+      if(btn) btn.textContent=`جارٍ الرفع ${Math.min(k+5,groupsArg.length)}/${groupsArg.length}…`;
+      const r=await sallaCall({action:'push_products', groups:groupsArg.slice(k,k+5)}); out.push(...r.results);
+    }
+  }catch(e){ alert('تعذّر الرفع: '+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
+  await loadSallaLinks(); renderAll();
+  const okN=out.filter(r=>!r.error).length, bad=out.filter(r=>r.error), warn=out.filter(r=>r.warnings?.length);
+  if(out.length) alert(`تم رفع ${okN} من ${out.length} منتج إلى سلة.`+(bad.length?`\n\nفشل:\n${bad.map(r=>`• ${r.grp}: ${r.error}`).join('\n')}`:'')+(warn.length?`\n\nملاحظات:\n${warn.map(r=>`• ${r.grp}: ${r.warnings.join('، ')}`).join('\n')}`:''));
+}
+$('#productList').addEventListener('click',e=>{ const k=e.target.dataset?.salla; if(k) pushGroups([k], e.target); });
+
+async function renderSallaCard(){
+  const card=$('#sallaCard'); if(!card) return;
+  card.hidden = !REMOTE || !isAdmin();
+  if(card.hidden) return;
+  if(!HAS_V3){ $('#sallaStatus').innerHTML='<p class="bad">⚠️ شغّل تحديث قاعدة البيانات 003 (ملف supabase/003_salla.sql) أولاً.</p>'; return; }
+  $('#sallaStatus').innerHTML='<p class="hint">جارٍ الفحص…</p>';
+  try{ const s=await sallaCall({action:'status'});
+    const linked=[...sallaLinks.values()].filter(l=>l.product_id).length, total=groups(items.filter(i=>i.model)).length;
+    $('#sallaStatus').innerHTML = s.connected
+      ? `<p class="ok">✓ المتجر مربوط (${esc(s.merchant)}) · مفتاح سلة صالح حتى ${esc(new Date(s.expires_at).toLocaleDateString('ar-SA'))}</p><p>المنتجات في سلة: <b>${linked}</b> من <b>${total}</b></p>`
+      : '<p class="warn">المتجر غير مربوط بعد — ثبّت التطبيق على متجرك من بوابة شركاء سلة.</p>';
+  }catch(e){ $('#sallaStatus').innerHTML=`<p class="bad">الخدمة غير جاهزة: ${esc(e.message)}</p><p class="hint">تأكد إن خدمات سلة منشورة في Supabase (salla-sync و salla-webhook).</p>`; }
+}
+$('#sallaPushAll').onclick=e=>{ const keys=groups(items.filter(i=>i.model)).map(([k])=>k);
+  if(confirm(`رفع/تحديث ${keys.length} منتج في سلة؟`)) pushGroups(keys, e.target); };
+$('#sallaPushNew').onclick=e=>{ const keys=groups(items.filter(i=>i.model)).map(([k])=>k).filter(k=>!sallaLinks.get(k)?.product_id);
+  if(!keys.length) return toast('كل المنتجات موجودة في سلة'); if(confirm(`رفع ${keys.length} منتج جديد إلى سلة؟`)) pushGroups(keys, e.target); };
+$('#sallaStockAll').onclick=async e=>{ const b=e.target; b.disabled=true;
+  try{ const r=await sallaCall({action:'push_stock', item_ids:items.filter(i=>skuOf(i)).map(i=>i.id)}); alert(`تم تحديث ${r.updated} كمية في سلة.${r.failed.length?`\nفشل ${r.failed.length}:\n${r.failed.slice(0,10).join('\n')}`:''}`); }
+  catch(err){ alert(err.message); } finally{ b.disabled=false; } };
+$('#sallaLogBtn').onclick=async()=>{
+  const {data,error}=await sb.from('salla_log').select('*').order('id',{ascending:false}).limit(50); if(error) return alert(error.message);
+  $('#sallaLog').innerHTML=`<table class="audit"><tr><th>الوقت</th><th>النوع</th><th>التفاصيل</th></tr>${data.map(r=>`<tr><td><small>${esc(fmtDate(r.at))}</small></td><td class="${r.kind==='error'?'bad':''}">${esc({event:'حدث',push:'رفع',error:'خطأ'}[r.kind]||r.kind)}</td><td><small>${esc(r.message||'')}</small></td></tr>`).join('')}</table>`;
+};
+{ const base=TABS.data; TABS.data=()=>{ base(); renderSallaCard(); }; }
+onReady.push(loadSallaLinks);
