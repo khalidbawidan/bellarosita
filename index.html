@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="جرد المخزون">
+<meta name="theme-color" content="#8a3d5c">
+<title>جرد المخزون — Double Roses</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>🌹 جرد المخزون</h1>
+  <span id="headStats"></span>
+</header>
+
+<nav id="tabs">
+  <button data-tab="products" class="active">المنتجات</button>
+  <button data-tab="count">الجرد</button>
+  <button data-tab="photos">الصور</button>
+  <button data-tab="labels">الليبلات</button>
+  <button data-tab="summary">الملخص</button>
+  <button data-tab="data">البيانات</button>
+</nav>
+
+<main>
+  <!-- المنتجات -->
+  <section id="tab-products" class="tab active">
+    <details class="card" id="addCard">
+      <summary>➕ إضافة موديل / مقاسات</summary>
+      <div class="grid2">
+        <label>رقم الموديل<input id="fModel" inputmode="numeric" placeholder="34185"></label>
+        <label>البراند<input id="fBrand" list="brandList" placeholder="LILUS"></label>
+        <label>الفئة<select id="fCategory"></select></label>
+        <label>اللون<select id="fColor"></select></label>
+        <label>السعر (ر.س)<input id="fPrice" type="number" inputmode="decimal"></label>
+        <label>السعر قبل الخصم<input id="fCompare" type="number" inputmode="decimal" placeholder="اختياري"></label>
+      </div>
+      <label>اسم المنتج<input id="fTitle" placeholder="فستان أطفال بحزام زهري"></label>
+      <label>الوصف<textarea id="fDesc" rows="2" placeholder="اختياري"></textarea></label>
+      <p class="hint">اكتب الكمية تحت كل مقاس متوفر (اترك الباقي فارغاً):</p>
+      <div id="sizeGrid" class="sizeGrid"></div>
+      <button class="primary" id="btnAdd">حفظ</button>
+    </details>
+    <datalist id="brandList"></datalist>
+
+    <div id="warnings"></div>
+
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="بحث: موديل، كود، لون، مقاس…">
+      <select id="filterModel"><option value="">كل الموديلات</option></select>
+    </div>
+    <div id="productList"></div>
+  </section>
+
+  <!-- الجرد -->
+  <section id="tab-count" class="tab">
+    <div class="card">
+      <p class="hint">ابدأ جرداً جديداً، ثم امسح باركود كل قطعة. كل مسح يزيد العدد قطعة واحدة.</p>
+      <div class="row">
+        <button id="btnNewCount">بدء جرد جديد</button>
+        <button id="btnScan" class="primary">📷 فتح الكاميرا</button>
+      </div>
+      <div id="reader"></div>
+      <div class="row">
+        <input id="manualCode" placeholder="أو اكتب الكود يدوياً / قارئ باركود" autocomplete="off">
+        <button id="btnManual">إضافة</button>
+      </div>
+      <div id="scanMsg" class="scanMsg"></div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="onlyDiff"> عرض الفروقات فقط</label>
+        <button id="btnApplyCount">اعتماد النتائج</button>
+        <button id="btnCountReport">تقرير Excel</button>
+      </div>
+      <div id="countStats"></div>
+      <div id="countList"></div>
+    </div>
+  </section>
+
+  <!-- الصور -->
+  <section id="tab-photos" class="tab">
+    <div class="card">
+      <p class="hint">كل موديل بلون معيّن له مجموعة صور. الصور تُحفظ باسم <b>الموديل-اللون-رقم</b> مثل <code>34185-BLU-1.jpg</code>.</p>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="onlyNoPhoto"> بدون صور فقط</label>
+        <button id="btnZip" class="primary">⬇️ تنزيل كل الصور (ZIP)</button>
+      </div>
+      <div id="photoStats"></div>
+    </div>
+    <div id="photoList"></div>
+    <input type="file" id="photoInput" accept="image/*" capture="environment" hidden multiple>
+  </section>
+
+  <!-- الليبلات -->
+  <section id="tab-labels" class="tab">
+    <div class="card">
+      <div class="grid2">
+        <label>الموديل<select id="lModel"><option value="">كل الموديلات</option></select></label>
+        <label>عدد الليبلات<select id="lMode">
+          <option value="qty">ليبل لكل قطعة (حسب الكمية)</option>
+          <option value="one">ليبل واحد لكل كود</option>
+        </select></label>
+        <label>مقاس الليبل<select id="lSize">
+          <option value="50x30">50×30 مم</option>
+          <option value="40x30">40×30 مم</option>
+          <option value="50x40">50×40 مم</option>
+        </select></label>
+        <label>الاسم على الليبل<input id="lStore" value="Double Roses"></label>
+      </div>
+      <div id="labelStats" class="hint"></div>
+      <div class="row">
+        <button id="btnLabelsXlsx" class="primary">Excel لتطبيق Niimbot</button>
+        <button id="btnLabelsPng">صور الليبلات (ZIP)</button>
+      </div>
+      <details class="hint">
+        <summary>طريقة الطباعة من الآيفون</summary>
+        <ol>
+          <li><b>طريقة Excel (الأسرع):</b> افتح تطبيق NIIMBOT ← أنشئ ليبل جديد بالمقاس المختار ← أضف باركود ونصوص ← اختر <b>استيراد Excel</b> واربط الباركود بعمود <code>Barcode</code> والنص بعمود <code>Price</code> و<code>Model</code> ← اطبع الكل.</li>
+          <li><b>طريقة الصور:</b> نزّل ملف ZIP، افتحه من تطبيق الملفات، واطبع كل صورة من خيار الصور في تطبيق NIIMBOT.</li>
+        </ol>
+      </details>
+    </div>
+    <div id="labelPreview" class="labelPreview"></div>
+  </section>
+
+  <!-- الملخص -->
+  <section id="tab-summary" class="tab">
+    <div id="summaryCards" class="statCards"></div>
+    <div class="card"><h3>القطع حسب المقاس</h3><div id="bySize"></div></div>
+    <div class="card"><h3>حسب الموديل</h3><div id="byModel"></div></div>
+  </section>
+
+  <!-- البيانات -->
+  <section id="tab-data" class="tab">
+    <div class="card">
+      <h3>استيراد</h3>
+      <p class="hint">استورد ملف Excel القديم (قالب Shopify) أو ملف جرد صدّرته من هنا. الصفوف المتكررة بنفس الموديل واللون والمقاس تُدمج وتُجمع كمياتها.</p>
+      <label class="fileBtn">📂 استيراد Excel<input type="file" id="importXlsx" accept=".xlsx,.xls,.csv" hidden></label>
+      <label class="fileBtn">📂 استرجاع نسخة احتياطية<input type="file" id="importJson" accept=".json" hidden></label>
+    </div>
+    <div class="card">
+      <h3>تصدير</h3>
+      <div class="col">
+        <button id="btnExportInv" class="primary">ملف الجرد الكامل (Excel)</button>
+        <button id="btnExportSalla">ملف المنتجات لمتجر سلة (Excel)</button>
+        <button id="btnBackup">نسخة احتياطية (JSON)</button>
+      </div>
+      <p class="hint">⚠️ البيانات محفوظة في هذا المتصفح فقط. خذ نسخة احتياطية بشكل دوري، خصوصاً قبل مسح بيانات Safari.</p>
+    </div>
+    <div class="card danger">
+      <button id="btnClear">مسح كل البيانات</button>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
