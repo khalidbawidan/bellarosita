@@ -341,18 +341,16 @@ function labelRows(){
 function drawLabel(it, size){
   const [W,H]=LABEL_PX[size]; const c=document.createElement('canvas'); c.width=W; c.height=H; const g=c.getContext('2d');
   g.fillStyle='#fff'; g.fillRect(0,0,W,H); g.fillStyle='#000'; g.textAlign='center';
-  const store=$('#lStore').value.trim(), head=$('#lHead').value;
-  if(head==='logo' && LOGO.wordBlack){ let w=W*0.9, h=w*LOGO.wordBlack.height/LOGO.wordBlack.width; if(h>H*0.14){ h=H*0.14; w=h*LOGO.wordBlack.width/LOGO.wordBlack.height; } g.drawImage(LOGO.wordBlack,(W-w)/2,(H*0.16-h)/2,w,h); }
-  else if(head==='icon' && LOGO.iconBlack){ g.font=`bold ${Math.round(H*0.1)}px Georgia, serif`; const t=store||it.brand||'', tw=g.measureText(t).width, ih=H*0.13, iw=LOGO.iconBlack.width*ih/LOGO.iconBlack.height, gap=8, x0=(W-(iw+gap+tw))/2;
-    g.drawImage(LOGO.iconBlack, x0, H*0.02, iw, ih); g.textAlign='left'; g.fillText(t, x0+iw+gap, H*0.12); g.textAlign='center'; }
-  else { g.font=`bold ${Math.round(H*0.1)}px Arial`; g.fillText(store || it.brand || '', W/2, H*0.12); }
+  // التصميم المعتمد: اسم البراند بخط الشعار أعلى الليبل (بدون أيقونة الوردة)
+  if(LOGO.wordBlack){ let w=W*0.88, h=w*LOGO.wordBlack.height/LOGO.wordBlack.width; if(h>H*0.13){ h=H*0.13; w=h*LOGO.wordBlack.width/LOGO.wordBlack.height; } g.drawImage(LOGO.wordBlack,(W-w)/2,H*0.025,w,h); }
+  else { g.font=`${Math.round(H*0.11)}px Georgia, serif`; g.fillText('BELLA ROSITA', W/2, H*0.13); }
   const bc=document.createElement('canvas');
   JsBarcode(bc, skuOf(it), {format:'CODE128', displayValue:false, margin:0, height:Math.round(H*0.38), width:2});
   const bw=Math.min(W-20, bc.width); g.drawImage(bc,(W-bw)/2,H*0.17,bw,H*0.38);
   g.font=`bold ${Math.round(H*0.085)}px monospace`; g.fillText(skuOf(it), W/2, H*0.66);
   g.font=`bold ${Math.round(H*0.1)}px Arial`; g.textAlign='left'; g.fillText(`M: ${it.model}   ${it.size}`, 12, H*0.83);
   g.textAlign='right'; g.font=`bold ${Math.round(H*0.14)}px Arial`; g.fillText(it.price!=null?`${it.price} SAR`:'', W-12, H*0.86);
-  if(it.brand && store){ g.textAlign='left'; g.font=`${Math.round(H*0.075)}px Arial`; g.fillText(it.brand, 12, H*0.96); }
+  if(it.brand){ g.textAlign='left'; g.font=`${Math.round(H*0.075)}px Arial`; g.fillText(it.brand, 12, H*0.96); }
   return c;
 }
 function renderLabels(){
@@ -363,9 +361,9 @@ function renderLabels(){
   const box=$('#labelPreview'); box.innerHTML='';
   if(window.JsBarcode) [...new Map(rows.map(r=>[r.id,r])).values()].slice(0,12).forEach(r=>box.appendChild(drawLabel(r,$('#lSize').value)));
 }
-['#lModel','#lMode','#lSize','#lStore','#lHead'].forEach(s=>$(s).addEventListener('change',renderLabels));
+['#lModel','#lMode','#lSize'].forEach(s=>$(s).addEventListener('change',renderLabels));
 $('#btnLabelsXlsx').onclick=()=>{ const rows=labelRows(); if(!rows.length) return toast('لا توجد ليبلات');
-  writeXlsx(`ليبلات-niimbot-${today()}.xlsx`, {'Labels':rows.map(i=>({Barcode:skuOf(i),Model:i.model,Size:i.size,Color:i.color,Price:i.price!=null?`${i.price} SAR`:'',Brand:i.brand||'',Store:$('#lStore').value}))}); };
+  writeXlsx(`ليبلات-niimbot-${today()}.xlsx`, {'Labels':rows.map(i=>({Barcode:skuOf(i),Model:i.model,Size:i.size,Color:i.color,Price:i.price!=null?`${i.price} SAR`:'',Brand:i.brand||'',Store:'BELLA ROSITA'}))}); };
 $('#btnLabelsPng').onclick=async()=>{ const rows=labelRows(); if(!rows.length) return toast('لا توجد ليبلات');
   const z=new JSZip(), cnt={}; const size=$('#lSize').value;
   for(const it of rows){ const s=skuOf(it); cnt[s]=(cnt[s]||0)+1; const b=await new Promise(r=>drawLabel(it,size).toBlob(r,'image/png')); z.file(`${s}_${cnt[s]}.png`,b); }
