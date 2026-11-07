@@ -7,13 +7,13 @@
 <meta name="apple-mobile-web-app-title" content="Bellarosita">
 <meta name="theme-color" content="#8a3d5c">
 <title>جرد المخزون — Bellarosita</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=3">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script>
+<script src="config.js?v=3"></script>
 </head>
 <body>
 <div id="login" hidden>
@@ -33,10 +33,12 @@
 
 <nav id="tabs">
   <button data-tab="products" class="active">المنتجات</button>
+  <button data-tab="ops">البيع والعمليات</button>
   <button data-tab="count">الجرد</button>
   <button data-tab="photos">الصور</button>
   <button data-tab="labels">الليبلات</button>
-  <button data-tab="summary">الملخص</button>
+  <button data-tab="marketing">التسويق</button>
+  <button data-tab="summary">التقارير</button>
   <button data-tab="data" class="adminOnly">البيانات</button>
 </nav>
 
@@ -68,6 +70,47 @@
       <select id="filterModel"><option value="">كل الموديلات</option></select>
     </div>
     <div id="productList"></div>
+  </section>
+
+  <!-- البيع والعمليات -->
+  <section id="tab-ops" class="tab">
+    <div class="card">
+      <div class="seg" id="opsMode">
+        <button data-mode="sale" class="on">🛍 بيع</button>
+        <button data-mode="reserve">📌 حجز</button>
+        <button data-mode="return">↩️ مرتجع</button>
+        <button data-mode="receive" class="adminOnly">📦 استلام</button>
+        <button data-mode="damage" class="adminOnly">⚠️ تالف</button>
+      </div>
+      <p class="hint" id="opsHint"></p>
+      <div class="row">
+        <button id="opsScanBtn" class="primary">📷 مسح باركود</button>
+        <input id="opsCode" placeholder="أو اكتب الكود" autocomplete="off">
+        <button id="opsCodeBtn">إضافة</button>
+      </div>
+      <div id="opsReader"></div>
+      <details id="opsPick">
+        <summary>اختيار يدوي (بدون باركود)</summary>
+        <label>الموديل واللون<select id="opsGroup"></select></label>
+        <div id="opsSizeGrid" class="sizeGrid"></div>
+        <button id="opsPickAdd">إضافة للقائمة</button>
+      </details>
+    </div>
+    <div class="card">
+      <h3 id="cartTitle">القائمة</h3>
+      <div id="cart"></div>
+      <div id="opsExtra" class="grid2">
+        <label>اسم العميلة<input id="opsCustomer" placeholder="اختياري للبيع"></label>
+        <label>الجوال<input id="opsPhone" inputmode="tel" placeholder="05xxxxxxxx"></label>
+        <label id="opsChannelL">قناة البيع<select id="opsChannel"><option value="studio">الاستديو</option><option value="online">أونلاين (واتساب/انستقرام)</option></select></label>
+        <label id="opsUntilL">الحجز حتى<input id="opsUntil" type="date"></label>
+      </div>
+      <label>ملاحظة<input id="opsNote" placeholder="اختياري"></label>
+      <div class="row"><button id="opsConfirm" class="primary">تأكيد</button><button id="opsClear">تفريغ</button></div>
+      <div id="opsResult"></div>
+    </div>
+    <div class="card"><h3>الحجوزات النشطة</h3><div id="resList"></div></div>
+    <div class="card"><h3>آخر العمليات</h3><div id="movList"></div></div>
   </section>
 
   <!-- الجرد -->
@@ -142,9 +185,49 @@
     <div id="labelPreview" class="labelPreview"></div>
   </section>
 
+  <!-- التسويق -->
+  <section id="tab-marketing" class="tab">
+    <div class="card">
+      <h3>🖼 بطاقة منتج للسوشيال</h3>
+      <div class="grid2">
+        <label>المنتج<select id="mkGroup"></select></label>
+        <label>المقاس<select id="mkFormat"><option value="post">منشور انستقرام 4:5</option><option value="story">ستوري / حالة واتساب 9:16</option><option value="square">مربع 1:1</option></select></label>
+        <label>النص العلوي<input id="mkHeadline" placeholder="مثال: وصل حديثاً ✨"></label>
+        <label>النص السفلي<input id="mkCta" placeholder="للطلب: واتساب …"></label>
+      </div>
+      <div class="row"><label class="chk"><input type="checkbox" id="mkPrice" checked> إظهار السعر</label><label class="chk"><input type="checkbox" id="mkSizes" checked> المقاسات المتوفرة</label></div>
+      <div id="mkPhotos" class="photos"></div>
+      <canvas id="mkCanvas" class="mkCanvas"></canvas>
+      <div class="row"><button id="mkShare" class="primary">مشاركة / حفظ</button><button id="mkDownload">تنزيل</button></div>
+    </div>
+    <div class="card">
+      <h3>📒 كتالوج PDF</h3>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="catInStock" checked> المتوفر فقط</label>
+        <label class="chk"><input type="checkbox" id="catPrices" checked> الأسعار</label>
+        <label class="chk"><input type="checkbox" id="catNoPhoto"> يشمل بدون صور</label>
+      </div>
+      <button id="catBuild" class="primary">إنشاء الكتالوج</button>
+      <p class="hint">على الآيفون: بعد الضغط تظهر شاشة الطباعة ← اضغط زر المشاركة ← "حفظ في الملفات" فيُحفظ PDF ترسله للعملاء.</p>
+    </div>
+    <div class="card adminOnly">
+      <h3>✍️ أوصاف المنتجات</h3>
+      <p class="hint">يكتب وصف عربي وإنجليزي واسم عربي للمنتجات اللي ناقصها. تقدر تعدّل أي وصف من زر ✏️ في تبويب المنتجات.</p>
+      <div class="row"><label class="chk"><input type="checkbox" id="descOverwrite"> استبدال الأوصاف الموجودة</label></div>
+      <button id="descBulk">توليد الأوصاف</button>
+    </div>
+  </section>
+
   <!-- الملخص -->
   <section id="tab-summary" class="tab">
     <div id="summaryCards" class="statCards"></div>
+    <div class="card"><h3>⚠️ مقاسات ناقصة أو قاربت تخلص</h3><div class="row"><button id="lowXlsx">قائمة طلب للمورد (Excel)</button><button id="lowCopy">نسخ كرسالة واتساب</button></div><div id="lowStock"></div></div>
+    <div class="card">
+      <h3>📈 تقرير المبيعات</h3>
+      <div class="grid2"><label>من<input type="date" id="repFrom"></label><label>إلى<input type="date" id="repTo"></label></div>
+      <div class="row"><button id="repRun" class="primary">عرض</button><button id="repXlsx">تصدير Excel</button></div>
+      <div id="repOut"></div>
+    </div>
     <div class="card"><h3>القطع حسب المقاس</h3><div id="bySize"></div></div>
     <div class="card"><h3>حسب الموديل</h3><div id="byModel"></div></div>
   </section>
@@ -166,6 +249,16 @@
       </div>
       <p class="hint localOnly">⚠️ البيانات محفوظة في هذا المتصفح فقط. خذ نسخة احتياطية بشكل دوري، خصوصاً قبل مسح بيانات Safari.</p>
     </div>
+    <div class="card adminOnly" id="settingsCard">
+      <h3>⚙️ الإعدادات</h3>
+      <div class="grid2">
+        <label>نسبة الربح المقترحة %<input id="setMarkup" type="number" inputmode="numeric"></label>
+        <label>تنبيه النقص عند كمية ≤<input id="setLow" type="number" inputmode="numeric"></label>
+        <label>رقم واتساب الاستديو<input id="setWa" inputmode="tel" placeholder="9665xxxxxxxx"></label>
+        <label>اسم الاستديو<input id="setName"></label>
+      </div>
+      <button id="setSave" class="primary">حفظ الإعدادات</button>
+    </div>
     <div class="card" id="migrateCard" hidden>
       <h3>نقل البيانات المحلية إلى قاعدة البيانات</h3>
       <p class="hint" id="migrateInfo"></p>
@@ -182,7 +275,32 @@
   </section>
 </main>
 
+<dialog id="editDlg">
+  <form method="dialog" id="editForm">
+    <h3 id="editTitle"></h3>
+    <div class="grid2">
+      <label>البراند<input id="eBrand" list="brandList"></label>
+      <label>الفئة<select id="eCategory"></select></label>
+      <label>السعر<input id="ePrice" type="number" inputmode="decimal"></label>
+      <label>السعر قبل الخصم<input id="eCompare" type="number" inputmode="decimal"></label>
+      <label>سعر التكلفة<input id="eCost" type="number" inputmode="decimal"></label>
+      <label>السعر المقترح<output id="eSuggest" class="suggest"></output></label>
+      <label>المكان (رف/صندوق)<input id="eLocation" placeholder="مثال: رف A2"></label>
+      <div></div>
+    </div>
+    <label>الاسم بالعربي<input id="eTitleAr"></label>
+    <label>الاسم بالإنجليزي<input id="eTitle" dir="ltr"></label>
+    <label>الوصف بالعربي<textarea id="eDesc" rows="3"></textarea></label>
+    <label>الوصف بالإنجليزي<textarea id="eDescEn" rows="3" dir="ltr"></textarea></label>
+    <p class="hint">مميزات الفستان (تُستخدم في توليد الوصف):</p>
+    <div id="eChips" class="chips"></div>
+    <div class="row"><button type="button" id="eGen">✨ توليد الوصف</button></div>
+    <div class="row"><button value="save" class="primary" id="eSave">حفظ</button><button value="cancel" formnovalidate>إلغاء</button></div>
+  </form>
+</dialog>
+<div id="printArea"></div>
 <div id="toast"></div>
-<script src="app.js"></script>
+<script src="app.js?v=3"></script>
+<script src="features.js?v=3"></script>
 </body>
 </html>

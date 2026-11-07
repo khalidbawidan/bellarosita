@@ -36,14 +36,19 @@ const isAdmin = () => me.role === 'admin';
 let snap = new Map();                            // آخر نسخة متزامنة مع السيرفر: id → JSON
 
 const localItems = () => { try{ return JSON.parse(localStorage.getItem(LS_KEY)) || []; }catch{ return []; } };
+let HAS_V2 = !REMOTE;   // هل شُغّل تحديث قاعدة البيانات 002 (التكلفة/الموقع/العمليات)
+const nOrNull = v => v==null ? null : Number(v);
 const toRow = i => ({id:i.id, sku:skuOf(i)||null, model:i.model||'', brand:i.brand||'', category:i.category||'Eid Dress', color:i.color, size:i.size,
-  qty:Math.max(0, Math.round(i.qty||0)), price:i.price, compare_at:i.compareAt, title:i.title||'', descr:i.desc||'', counted:i.counted});
+  qty:Math.max(0, Math.round(i.qty||0)), price:i.price, compare_at:i.compareAt, title:i.title||'', descr:i.desc||'', counted:i.counted,
+  ...(HAS_V2 ? {cost:i.cost??null, location:i.location||'', title_ar:i.titleAr||'', descr_en:i.descEn||''} : {})});
 const fromRow = r => ({id:r.id, model:r.model, brand:r.brand, category:r.category, color:r.color, size:r.size, qty:r.qty,
-  price:r.price==null?null:Number(r.price), compareAt:r.compare_at==null?null:Number(r.compare_at), title:r.title, desc:r.descr, counted:r.counted});
+  price:nOrNull(r.price), compareAt:nOrNull(r.compare_at), title:r.title, desc:r.descr, counted:r.counted,
+  cost:nOrNull(r.cost), location:r.location||'', titleAr:r.title_ar||'', descEn:r.descr_en||''});
 const rowKey = i => JSON.stringify(toRow(i));
 
 async function load(){
   if(!REMOTE){ items = localItems(); return; }
+  HAS_V2 = !(await sb.from('movements').select('id').limit(1)).error;
   const all=[]; for(let from=0;;from+=1000){
     const {data,error}=await sb.from('items').select('*').range(from,from+999); if(error) throw error;
     all.push(...data); if(data.length<1000) break; }
@@ -134,10 +139,11 @@ function initForm(){
       title:$('#fTitle').value.trim(), desc:$('#fDesc').value.trim()};
     if(!base.model) return toast('اكتب رقم الموديل');
     if(!base.color) return toast('اختر اللون');
-    let n=0;
-    document.querySelectorAll('#sizeGrid input').forEach(inp => { const q=num(inp.value); if(q!=null && q>0){ upsert({...base,size:inp.dataset.size,qty:q}); n++; inp.value=''; } });
+    let n=0; const added=[];
+    document.querySelectorAll('#sizeGrid input').forEach(inp => { const q=num(inp.value); if(q!=null && q>0){ const it=upsert({...base,size:inp.dataset.size,qty:q}); added.push({id:it.id,qty:q}); n++; inp.value=''; } });
     if(!n) return toast('اكتب الكمية لمقاس واحد على الأقل');
-    save(); toast(`تم حفظ ${n} مقاس للموديل ${base.model}`);
+    window.lastReceipt = added;   // لطباعة ليبلات القطع المضافة فقط
+    save(); toast(`تم حفظ ${n} مقاس للموديل ${base.model} — ليبلاتها في "آخر استلام"`);
   };
 }
 
@@ -149,15 +155,15 @@ async function photoBlob(p){ return p.blob || await fetch(p.url).then(r=>r.blob(
 async function refreshPhotos(){
   if(!REMOTE){ photoCache = await photosAll(); return; }
   const {data,error}=await sb.from('photos').select('*'); if(error) throw error;
-  photoCache = data.map(r=>({id:r.id, group:r.grp, n:r.n, path:r.path, url:sb.storage.from('photos').getPublicUrl(r.path).data.publicUrl}));
+  photoCache = data.map(r=>({id:r.id, group:r.grp, n:r.n, path:r.path, shot:r.shot||'other', url:sb.storage.from('photos').getPublicUrl(r.path).data.publicUrl}));
 }
-async function addPhoto(group, blob){
+async function addPhoto(group, blob, shot='other'){
   const n=Math.max(0,...photoCache.filter(p=>p.group===group).map(p=>p.n))+1, id=`${group}-${n}`;
-  if(!REMOTE){ const p={id,group,n,blob,at:Date.now()}; await photoPut(p); photoCache.push(p); return; }
+  if(!REMOTE){ const p={id,group,n,blob,shot,at:Date.now()}; await photoPut(p); photoCache.push(p); return; }
   const path=`${group}/${n}-${Date.now()}.jpg`;
   const up=await sb.storage.from('photos').upload(path, blob, {contentType:'image/jpeg'}); if(up.error) throw up.error;
-  const {error}=await sb.from('photos').insert({id,grp:group,n,path}); if(error){ await sb.storage.from('photos').remove([path]); throw error; }
-  photoCache.push({id,group,n,path,url:sb.storage.from('photos').getPublicUrl(path).data.publicUrl});
+  const {error}=await sb.from('photos').insert({id,grp:group,n,path,...(HAS_V2?{shot}:{})}); if(error){ await sb.storage.from('photos').remove([path]); throw error; }
+  photoCache.push({id,group,n,path,shot,url:sb.storage.from('photos').getPublicUrl(path).data.publicUrl});
 }
 async function removePhoto(id){
   if(!REMOTE) return photoDel(id);
@@ -179,7 +185,7 @@ function renderProducts(){
   const models = [...new Set(items.map(i=>i.model).filter(Boolean))].sort();
   const cur = fm; $('#filterModel').innerHTML = '<option value="">كل الموديلات</option>' + models.map(m=>`<option ${m===cur?'selected':''}>${esc(m)}</option>`).join('');
   $('#brandList').innerHTML = [...new Set(items.map(i=>i.brand).filter(Boolean))].map(b=>`<option value="${esc(b)}">`).join('');
-  const list = items.filter(i => (!fm || i.model===fm) && (!q || [skuOf(i),i.model,i.color,COLOR_AR[i.color],i.size,i.brand,i.title].join(' ').toLowerCase().includes(q)));
+  const list = items.filter(i => (!fm || i.model===fm) && (!q || [skuOf(i),i.model,i.color,COLOR_AR[i.color],i.size,i.brand,i.title,i.titleAr,i.location].join(' ').toLowerCase().includes(q)));
   // تحذيرات
   const bad = items.filter(i=>issuesOf(i).length);
   const noModel = items.filter(i=>!i.model);
@@ -191,11 +197,12 @@ function renderProducts(){
     const f=arr[0], tot=arr.reduce((s,i)=>s+(i.qty||0),0), t=thumb(key);
     return `<div class="group"><div class="groupHead">
       ${t?`<img src="${t}" alt="">`:''}
-      <div style="flex:1"><b>${esc(f.model||'? بدون موديل')}</b> · ${esc(COLOR_AR[f.color]||f.color)} <small>${esc(f.brand||'')} · ${esc(CAT_AR[f.category]||f.category||'')}</small><br>
-      <small>${esc(f.title||'— بدون اسم —')}</small></div>
-      <div><b>${tot}</b> <small>قطعة</small></div></div>
+      <div style="flex:1"><b>${esc(f.model||'? بدون موديل')}</b> · ${esc(COLOR_AR[f.color]||f.color)} <small>${esc(f.brand||'')} · ${esc(CAT_AR[f.category]||f.category||'')}</small>
+      ${f.location?`<span class="badge loc">📍 ${esc(f.location)}</span>`:''}<br>
+      <small>${esc(f.titleAr||f.title||'— بدون اسم —')}</small></div>
+      <div><b>${tot}</b> <small>قطعة</small>${f.model?` <button class="small adminOnly" data-edit="${esc(key)}">✏️</button>`:''}</div></div>
       <table><tr><th>الكود</th><th>المقاس</th><th>الموديل</th><th>الكمية</th><th>السعر</th><th></th></tr>
-      ${arr.map(i=>`<tr data-id="${i.id}"><td class="sku">${esc(skuOf(i)||'—')}</td><td>${esc(i.size)}</td>
+      ${arr.map(i=>`<tr data-id="${i.id}"><td class="sku">${esc(skuOf(i)||'—')}</td><td>${esc(i.size)}${typeof reservedQty==='function'&&reservedQty(i.id)?`<span class="badge">محجوز ${reservedQty(i.id)}</span>`:''}</td>
         <td><input data-f="model" value="${esc(i.model)}" inputmode="numeric" ${ro}></td>
         <td><input data-f="qty" type="number" min="0" value="${i.qty??''}" ${ro}></td>
         <td><input data-f="price" type="number" value="${i.price??''}" ${ro}></td>
@@ -282,22 +289,24 @@ $('#btnCountReport').onclick=()=>{
 };
 
 /* ===== الصور ===== */
-let photoTarget=null;
+let photoTarget=null, photoShot='other';
+const SHOTS = {front:'أمام', back:'خلف', detail:'تفاصيل', mannequin:'مانيكان', other:'أخرى'};
 async function renderPhotos(){
   const gs=groups(items.filter(i=>i.model));
   const only=$('#onlyNoPhoto').checked;
-  const done=gs.filter(([k])=>photoCache.some(p=>p.group===k)).length;
-  $('#photoStats').innerHTML=`<p>تم تصوير <b>${done}</b> من <b>${gs.length}</b> موديل/لون · إجمالي الصور: <b>${photoCache.length}</b></p>`;
+  const done=gs.filter(([k])=>['front','back','detail'].every(s=>photoCache.some(p=>p.group===k&&p.shot===s))).length;
+  $('#photoStats').innerHTML=`<p>مكتمل التصوير (أمام + خلف + تفاصيل): <b>${done}</b> من <b>${gs.length}</b> · إجمالي الصور: <b>${photoCache.length}</b></p>`;
   $('#photoList').innerHTML=gs.filter(([k])=>!only||!photoCache.some(p=>p.group===k)).map(([key,arr])=>{
     const ps=photoCache.filter(p=>p.group===key).sort((a,b)=>a.n-b.n);
     return `<div class="group"><div class="groupHead"><div style="flex:1"><b>${esc(key)}</b> <small>${esc(COLOR_AR[arr[0].color]||'')} · ${esc(arr[0].title||'')}</small></div>
-      <span class="pill ${ps.length?'ok':'warn'}">${ps.length} صورة</span> <button class="small primary" data-shoot="${esc(key)}">📷 تصوير</button></div>
+      <span class="pill ${ps.length?'ok':'warn'}">${ps.length} صورة</span></div>
+      <div class="shots">${Object.entries(SHOTS).map(([k,v])=>`<button class="${k!=='other'&&ps.some(p=>p.shot===k)?'done':''}" data-shoot="${esc(key)}" data-shot="${k}">${k!=='other'&&ps.some(p=>p.shot===k)?'✓ ':'📷 '}${v}</button>`).join('')}</div>
       ${ps.length?`<div class="photos">${ps.map(p=>`<div class="ph"><img src="${esc(photoSrc(p))}" loading="lazy" alt="${esc(p.id)}"><button data-pdel="${esc(p.id)}">✕</button></div>`).join('')}</div>`:''}</div>`;
   }).join('') || '<p class="hint">لا توجد موديلات مكتملة (برقم موديل) للتصوير.</p>';
 }
 $('#onlyNoPhoto').onchange=renderPhotos;
 $('#photoList').addEventListener('click',async e=>{
-  if(e.target.dataset.shoot){ photoTarget=e.target.dataset.shoot; $('#photoInput').value=''; $('#photoInput').click(); }
+  if(e.target.dataset.shoot){ photoTarget=e.target.dataset.shoot; photoShot=e.target.dataset.shot||'other'; $('#photoInput').value=''; $('#photoInput').click(); }
   if(e.target.dataset.pdel){ if(!confirm('حذف الصورة؟')) return; try{ await removePhoto(e.target.dataset.pdel); }catch(err){ return alert('تعذّر الحذف: '+err.message); } await refreshPhotos(); thumbUrls.clear(); renderPhotos(); }
 });
 function compress(file, max=1600){ return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const s=Math.min(1,max/Math.max(img.width,img.height));
@@ -306,7 +315,7 @@ function compress(file, max=1600){ return new Promise((res,rej)=>{ const img=new
 $('#photoInput').onchange=async e=>{
   const files=[...e.target.files]; if(!files.length||!photoTarget) return;
   toast('جارٍ حفظ الصور…');
-  try{ for(const f of files) await addPhoto(photoTarget, await compress(f)); }
+  try{ for(const f of files) await addPhoto(photoTarget, await compress(f), photoShot); }
   catch(err){ alert('تعذّر رفع الصورة: '+(err.message||err)); }
   thumbUrls.clear(); toast(`تم حفظ ${files.length} صورة لـ ${photoTarget}`); renderPhotos();
 };
@@ -317,6 +326,7 @@ $('#btnZip').onclick=async()=>{ if(!photoCache.length) return toast('لا توج
 const LABEL_PX = {'50x30':[400,240],'40x30':[320,240],'50x40':[400,320]}; // 203dpi ≈ 8px/مم
 function labelRows(){
   const m=$('#lModel').value, mode=$('#lMode').value, out=[];
+  if(m==='__receipt'){ for(const l of (window.lastReceipt||[])){ const it=items.find(i=>i.id===l.id); if(it) for(let k=0;k<l.qty;k++) out.push(it); } return out; }
   items.filter(i=>skuOf(i) && (!m||i.model===m)).sort((a,b)=>skuOf(a).localeCompare(skuOf(b))).forEach(i=>{
     const n= mode==='qty' ? (i.qty||0) : 1; for(let k=0;k<n;k++) out.push(i); });
   return out;
@@ -337,7 +347,7 @@ function drawLabel(it, size){
 }
 function renderLabels(){
   const models=[...new Set(items.map(i=>i.model).filter(Boolean))].sort(); const cur=$('#lModel').value;
-  $('#lModel').innerHTML='<option value="">كل الموديلات</option>'+models.map(m=>`<option ${m===cur?'selected':''}>${esc(m)}</option>`).join('');
+  $('#lModel').innerHTML='<option value="">كل الموديلات</option>'+(window.lastReceipt?.length?`<option value="__receipt" ${cur==='__receipt'?'selected':''}>📦 آخر استلام (${window.lastReceipt.reduce((s,l)=>s+l.qty,0)} قطعة)</option>`:'')+models.map(m=>`<option ${m===cur?'selected':''}>${esc(m)}</option>`).join('');
   const rows=labelRows(); const noPrice=rows.filter(i=>i.price==null).length;
   $('#labelStats').innerHTML=`عدد الليبلات: <b>${rows.length}</b>${noPrice?` · <span class="warn">${noPrice} بدون سعر</span>`:''} · المعاينة تعرض أول 12`;
   const box=$('#labelPreview'); box.innerHTML='';
@@ -426,8 +436,8 @@ $('#btnClear').onclick=async()=>{ if(!confirm('مسح كل المنتجات وا
 
 /* ===== تشغيل ===== */
 function renderHead(){ const pcs=items.reduce((s,i)=>s+(i.qty||0),0); $('#headStats').textContent=`${new Set(items.map(i=>i.model).filter(Boolean)).size} موديل · ${pcs} قطعة`; }
-function renderAll(){ renderHead(); const t=document.querySelector('.tab.active').id.slice(4);
-  ({products:renderProducts,count:renderCount,photos:renderPhotos,labels:renderLabels,summary:renderSummary,data:renderData})[t](); }
+const TABS = {products:()=>renderProducts(),count:()=>renderCount(),photos:()=>renderPhotos(),labels:()=>renderLabels(),summary:()=>renderSummary(),data:()=>renderData()};
+function renderAll(){ renderHead(); const t=document.querySelector('.tab.active').id.slice(4); (TABS[t]||(()=>{}))(); }
 function renderData(){
   if(!REMOTE) return;
   const li=localItems(); $('#migrateCard').hidden = !isAdmin();
@@ -460,7 +470,7 @@ async function enterApp(){
   document.body.classList.toggle('staff', !isAdmin());
   $('#userName').textContent=`${me.username}${isAdmin()?' (مدير)':''}`; $('#userBar').hidden=false; $('#login').hidden=true;
   $('#clearCard').hidden=true;
-  try{ await load(); await refreshPhotos(); }catch(err){ alert('تعذّر تحميل البيانات: '+err.message); }
+  try{ await load(); await refreshPhotos(); for(const f of onReady) await f(); }catch(err){ alert('تعذّر تحميل البيانات: '+err.message); }
   renderAll(); subscribeRealtime();
 }
 function showLogin(){ $('#login').hidden=false; setTimeout(()=>$('#lUser').focus(),50); }
@@ -473,6 +483,9 @@ $('#loginForm').onsubmit=async e=>{
 };
 $('#btnLogout').onclick=async()=>{ await sb.auth.signOut(); location.reload(); };
 
-initForm();
-if(REMOTE){ document.body.classList.add('remote'); enterApp(); }
-else { load(); refreshPhotos().then(renderAll).catch(renderAll); renderAll(); }
+const onReady = [];   // دوال تُستدعى بعد تحميل البيانات (من features.js)
+window.addEventListener('DOMContentLoaded', () => {
+  initForm();
+  if(REMOTE){ document.body.classList.add('remote'); enterApp(); }
+  else { load(); refreshPhotos().then(()=>{ onReady.forEach(f=>f()); renderAll(); }).catch(renderAll); renderAll(); }
+});

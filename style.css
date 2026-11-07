@@ -65,3 +65,37 @@ body.staff .adminOnly{display:none!important}
 body.remote .localOnly{display:none!important}
 #userBar button{padding:2px 8px;font-size:12px;background:#fff2;color:#fff;border-color:#fff6}
 .audit td{font-size:12px}
+[hidden]{display:none!important}
+/* العمليات والتسويق */
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg button{flex:1 0 auto;padding:8px 10px}
+.seg button.on{background:var(--brand);color:#fff}
+#opsReader{width:100%;max-width:420px;margin:8px auto}
+.cartTotal{font-size:18px;margin:8px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chips label{display:inline-flex;align-items:center;gap:4px;margin:0;background:var(--brand2);border-radius:14px;padding:4px 10px;color:#2b2226}
+.chips input{width:auto;margin:0}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:#fff3cd;color:#8a6100;margin-inline-start:4px}
+.badge.loc{background:#e8f0fe;color:#1a56b0}
+.shots{display:flex;gap:4px;flex-wrap:wrap;padding:6px 12px}
+.shots button{padding:4px 8px;font-size:12px}
+.shots button.done{background:#e9f6ee;color:var(--ok);border-color:#bfe3cc}
+.mkCanvas{width:100%;max-width:360px;display:block;margin:10px auto;border:1px solid var(--line);border-radius:8px}
+#mkPhotos img{cursor:pointer;border:3px solid transparent}#mkPhotos img.sel{border-color:var(--brand)}
+dialog{border:0;border-radius:14px;padding:14px;width:min(560px,94vw);max-height:90vh}
+dialog::backdrop{background:#0006}
+.suggest{display:block;padding:9px 0;font-weight:600;color:var(--ok)}
+#printArea{display:none}
+@media print{
+  body>*:not(#printArea){display:none!important}
+  #printArea{display:block!important}
+  .catPage{font-family:-apple-system,Tahoma,sans-serif;direction:rtl;color:#222}
+  .catHead{text-align:center;border-bottom:2px solid #8a3d5c;margin-bottom:10px;padding-bottom:6px}
+  .catHead h1{color:#8a3d5c;margin:0}
+  .catGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .catItem{break-inside:avoid;border:1px solid #ddd;border-radius:8px;overflow:hidden;font-size:12px}
+  .catItem img{width:100%;aspect-ratio:4/5;object-fit:cover;display:block}
+  .catItem .noimg{aspect-ratio:4/5;background:#f6e9ee;display:flex;align-items:center;justify-content:center;color:#8a3d5c}
+  .catItem div.t{padding:6px}
+  @page{margin:10mm}
+}
